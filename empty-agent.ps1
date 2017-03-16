@@ -1,21 +1,46 @@
 
-#Log, name, config 
-$global:logger = $null
-$global:MA_Name = $null
-$global:Config = $null
+#Add-Type -Path 'C:\Program Files\Microsoft Forefront Identity Manager\2010\Synchronization Service\UIShell\Microsoft.MetadirectoryServicesEx.dll'
 
-#Schema
-$global:Schema = $null
-$global:SchemaObjectClassList = New-Object System.Collections.Generic.List[System.String]
+<#
+	FIM/MIM Adv.Powershell agent script 2015 Anders Åsén Landstinget Dalarna
 
-#Other
-$global:ImportRunStepPageSize = $null
-$global:PageSize = $null
-$global:BatchSize = $null
-$global:DeleteObjectJob = $null
-$global:DeleteList = $null
+	This script is loaded and invoke from FIM/MIM MIM Adv.Powershell agent
+	Initialize function is invoke after script i loaded NOT on reloaded (on script file on change on run)
+	Is recommended that global variables is to be initiated and set in initialize function, not loosely in script.
+	FIM/MIM will provide Initialize with parameter: $logger, $MAName and $Config, on first load.
 
-<#Initialize
+	If global variables is not set in Initialize function, reload may not be enable to restore those variable.
+	NOTE! Don’t set ex: '$global:logger = $null' in script, as reload will load script file and then set variable that is not present after load.
+	$logger will then be null until Initialize is run again.
+#>
+
+
+<#
+	Initialize
+	
+	$logger is NLog instants for just this agent, NLog name will be <poweshell namespace>.<agent name> ex 'LD.IdentityManagement.Agent.Powershell.WaHSAn'
+	The NLog can be use full,
+	https://github.com/NLog/NLog/wiki
+	
+	Normal Use is : $logger.<log level>("log text") or  $logger.<log level>("{0} {1}",$variabel1,$variabel2)
+	Log level: 
+		Fatal
+		Error
+		Warn
+		Info
+		Debug
+		Trace
+		Ex: $logger.Error("This is error meassage on {0}",$UserId)
+		
+	$MAName is name of this current agent that is determent by FIM/MIM
+	This normally use for provision or CS search
+	
+	$Config is extra config class in Adv.Powershell store i XML file, some extra variable is store her.
+	Normal all agent have their own entry and can read and update this variables. Some variable is global (read only).
+	Use get: $config["variebl name"]
+	Use set: $config["variebl name"] = "value"
+	Encrypt/decryp (ProtectedType) of data is done automatic. This cant only be set in use manually in XML file.
+	Encrypt is using ProtectedData of current windows user in FIM/MIM
 #>
 Function Initialize{
 	Param
@@ -33,6 +58,7 @@ Function Initialize{
 #region Help Functions
 
 #endregion
+
 
 #region IMASynchronization
 Function IMASynchronization.Initialize{
@@ -90,12 +116,9 @@ Function IMASynchronization.MapAttributesForJoin{
 		$ValueCollection
 	)
 	
-	#switch ($FlowRuleName)
+	#switch($FlowRuleName)
 	#{
-	#	"hsaIdentity" {
-	#		$ValueCollection.Add("SE1234567890-{0}" -f $CSEntry["ID"].StringValue.Split("_")[1])
-	#		break
-	#	}
+	#	#"rule" { ;break}
 	#}
 }
 
@@ -126,9 +149,7 @@ Function IMASynchronization.MapAttributesForImport{
 	
 	#switch($FlowRuleName)
 	#{
-	#	#"" {
-	#	#	break
-	#	#}
+	#	#"rule" { ;break}
 	#}
 }
 
@@ -143,9 +164,7 @@ Function IMASynchronization.MapAttributesForExport{
 	
 	#switch($FlowRuleName)
 	#{
-	#	"" {
-	#		break
-	#	}
+	#	#"rule" { ;break}
 	#}
 }
 #endregion
@@ -181,7 +200,14 @@ Function IMVSynchronization.ShouldDeleteFromMV{
 }
 #endregion
 
+
 #region IMAExtensible2
+<#
+	IMAExtensible2
+	Only use for FIM 2010 capability
+	FIM 2010 R2 and above use IMAExtensible2GetParameters.GetConfigParameters
+	You may use this if config powershell agent to use it.
+#>
 Function IMAExtensible2GetCapabilitiesEx.GetCapabilitiesEx{
 
 	$global:logger.debug("Start Capabilitie")
@@ -204,6 +230,32 @@ Function IMAExtensible2GetCapabilitiesEx.GetCapabilitiesEx{
 	$global:logger.debug("End Capabilitie")
 }
 
+<#
+	IMAExtensible2GetParameters.GetConfigParameters
+	https://msdn.microsoft.com/en-us/library/microsoft.metadirectoryservices.imaextensible2getparameters.getconfigparameters%28v=vs.100%29.aspx
+	
+	Config setup for agent (only use ones on create)
+	
+	Capabilities:
+	Pre. def. variables, this may be change in FIM/MIM
+	Add extra config(FIM/MIM ConfigParameters variable) if need
+	
+	Connectivity:
+	Powershell script path normally this script file shod be use 
+	Add extra config(FIM/MIM ConfigParameters variable) if need
+	
+	Global:
+	FIM/MIM global variables
+	
+	Partition:
+	FIM/MIM Partition variables, use if LDAP structure is use
+	
+	RunStep:
+	FIM/MIM set def. RunStep
+	
+	RunStep:
+	FIM/MIM set def. Schema
+#>
 Function IMAExtensible2GetParameters.GetConfigParameters{
 	Param
     (
@@ -259,12 +311,12 @@ Function IMAExtensible2GetParameters.GetConfigParameters{
 		}
 		"Connectivity" {
 			$ConfigParameterDefinitions.Add([Microsoft.MetadirectoryServices.ConfigParameterDefinition]::CreateLabelParameter("Powershell script"))
-			$ConfigParameterDefinitions.Add([Microsoft.MetadirectoryServices.ConfigParameterDefinition]::CreateStringParameter("IMAExtensible2GetParameters","","c:\script\sampel-agent.ps1"))
+			$ConfigParameterDefinitions.Add([Microsoft.MetadirectoryServices.ConfigParameterDefinition]::CreateStringParameter("IMAExtensible2GetParameters","","E:\MIM-PS-agents\SharePointSite\LD-MA-SharePointSite.ps1"))
 			$ConfigParameterDefinitions.Add([Microsoft.MetadirectoryServices.ConfigParameterDefinition]::CreateStringParameter("IMAExtensible2GetCapabilitiesEx","",""))
-			$ConfigParameterDefinitions.Add([Microsoft.MetadirectoryServices.ConfigParameterDefinition]::CreateStringParameter("IMAExtensible2GetSchema","","c:\script\sampel-agent.ps1"))
-			$ConfigParameterDefinitions.Add([Microsoft.MetadirectoryServices.ConfigParameterDefinition]::CreateStringParameter("IMAExtensible2CallImport","","c:\script\sampel-agent.ps1"))
-			$ConfigParameterDefinitions.Add([Microsoft.MetadirectoryServices.ConfigParameterDefinition]::CreateStringParameter("IMAExtensible2CallExport","","c:\script\sampel-agent.ps1"))
-			$ConfigParameterDefinitions.Add([Microsoft.MetadirectoryServices.ConfigParameterDefinition]::CreateStringParameter("IMAExtensible2Password","","c:\script\sampel-agent.ps1"))
+			$ConfigParameterDefinitions.Add([Microsoft.MetadirectoryServices.ConfigParameterDefinition]::CreateStringParameter("IMAExtensible2GetSchema","","E:\MIM-PS-agents\SharePointSite\LD-MA-SharePointSite.ps1"))
+			$ConfigParameterDefinitions.Add([Microsoft.MetadirectoryServices.ConfigParameterDefinition]::CreateStringParameter("IMAExtensible2CallImport","","E:\MIM-PS-agents\SharePointSite\LD-MA-SharePointSite.ps1"))
+			$ConfigParameterDefinitions.Add([Microsoft.MetadirectoryServices.ConfigParameterDefinition]::CreateStringParameter("IMAExtensible2CallExport","","E:\MIM-PS-agents\SharePointSite\LD-MA-SharePointSite.ps1"))
+			$ConfigParameterDefinitions.Add([Microsoft.MetadirectoryServices.ConfigParameterDefinition]::CreateStringParameter("IMAExtensible2Password","","E:\MIM-PS-agents\SharePointSite\LD-MA-SharePointSite.ps1"))
 			break
 		}
 		"Global" {break}
@@ -276,9 +328,15 @@ Function IMAExtensible2GetParameters.GetConfigParameters{
 	
 	$global:logger.debug("End GetConfigParameters")
 }
+
 <#
-	Get LdapSchema
-	return Microsoft.MetadirectoryServices.Schema
+	GetSchema
+	https://msdn.microsoft.com/en-us/library/microsoft.metadirectoryservices.imaextensible2getschema.getschema(v=vs.100).aspx
+	
+	Setup of schema.
+	Rek. to use dynamic way to generate scheme from DB/webservice/file ...
+	Can crate different object type.
+	If use Reference value use be sure that all ref. object is imported.
 #>
 Function IMAExtensible2GetSchema.GetSchema{
 	Param
@@ -321,6 +379,12 @@ Function IMAExtensible2GetSchema.GetSchema{
 	}
 }
 
+<#
+	ValidateConfigParameters
+	https://msdn.microsoft.com/en-us/library/microsoft.metadirectoryservices.imaextensible2getparameters.validateconfigparameters%28v=vs.100%29.aspx
+	
+	If some extra variable validation is need
+#>
 Function IMAExtensible2GetParameters.ValidateConfigParameters{
 	Param
     (
@@ -335,6 +399,18 @@ Function IMAExtensible2GetParameters.ValidateConfigParameters{
 #endregion
 
 #region Import
+<#
+	OpenImportConnection
+	https://msdn.microsoft.com/en-us/library/microsoft.metadirectoryservices.imaextensible2callimport.openimportconnection.aspx
+	
+	Open data stream connection for import,
+	May read data but are not required at this point.
+	
+	OperationType most be followed (Full Delta)
+	
+	Any global variable that is need in GetImportEntries may be set her.
+	NOTE! PageSize and schema are very imported to use as global variables.
+#>
 Function IMAExtensible2CallImport.OpenImportConnection{
 	Param
     (
@@ -342,7 +418,7 @@ Function IMAExtensible2CallImport.OpenImportConnection{
 		$Schema,
 		$OpenImportConnectionRunStep
 	)
-	
+	Try{
 		$OpenImportConnectionResults = New-Object Microsoft.MetadirectoryServices.OpenImportConnectionResults
 		$global:logger.Debug("Run IMAExtensible2CallImport.OpenImportConnection")
 		$global:logger.Debug("PageSize: {0}",$OpenImportConnectionRunStep.PageSize)
@@ -376,6 +452,18 @@ Function IMAExtensible2CallImport.OpenImportConnection{
 	}
 }
 
+<#
+	GetImportEntries
+	https://msdn.microsoft.com/en-us/library/microsoft.metadirectoryservices.imaextensible2callimport.getimportentries.aspx
+	
+	This function is call multiple time, until no more data left to import
+	
+	You most respect PageSize and schema (attributes) for import 
+	MoreToImport indicate if more data is available.
+	
+	Is rek. that any error should halt import stage (throw error)
+	Is not rek. to use multitaskning/thrading as it may cause unforeseen problem.
+#>
 Function IMAExtensible2CallImport.GetImportEntries{
 	Param
     (
@@ -411,6 +499,18 @@ Function IMAExtensible2CallImport.GetImportEntries{
 					$Valuelist.Add("Some value")
 					$CSEntry.AttributeChanges.Add([Microsoft.MetadirectoryServices.AttributeChange]::CreateAttributeAdd("Multi Attribute name",$Valuelist))
 				}
+				
+				#Alt.
+				foreach($attibute in $Global:Schema.Types["dataEntry ObjectType"].Attributes){
+				
+					$Value = getValueof($attibute.Name)
+					
+					if($Value){
+						$CSEntry.AttributeChanges.Add([Microsoft.MetadirectoryServices.AttributeChange]::CreateAttributeAdd($attibute.Name,$Value))
+					}
+				}
+				
+				
 				$GetImportEntriesResults.CSEntries.Add($CSEntry)
 			}
 		}
@@ -434,6 +534,12 @@ Function IMAExtensible2CallImport.GetImportEntries{
 	}
 }
 
+<#
+	CloseImportConnection
+	https://msdn.microsoft.com/en-us/library/microsoft.metadirectoryservices.imaextensible2callimport.closeimportconnection.aspx
+	
+	Clean up process for closing data stream ect.
+#>
 Function IMAExtensible2CallImport.CloseImportConnection{
 	Param
     (
@@ -459,6 +565,13 @@ Function IMAExtensible2CallImport.CloseImportConnection{
 #endregion
 
 #region export
+<#
+	OpenExportConnection
+	https://msdn.microsoft.com/en-us/library/microsoft.metadirectoryservices.imaextensible2callexport.openexportconnection.aspx
+	
+	Open data stream for export
+	BatchSize is importen to use
+#>
 Function IMAExtensible2CallExport.OpenExportConnection{
 	Param
     (
@@ -482,6 +595,16 @@ Function IMAExtensible2CallExport.OpenExportConnection{
 	}
 }
 
+<#
+	PutExportEntries
+	https://msdn.microsoft.com/en-us/library/microsoft.metadirectoryservices.imaextensible2callexport.putexportentries.aspx
+	
+	Export data from FIM/MIM
+	This function is call ones
+	
+	use PutExportEntriesResults to indicate error
+	May stop export by throw error
+#>
 Function IMAExtensible2CallExport.PutExportEntries{
 	Param
     (
@@ -530,6 +653,12 @@ Function IMAExtensible2CallExport.PutExportEntries{
 	$global:logger.Debug("End IMAExtensible2CallExport.PutExportEntries")
 }
 
+<#
+	CloseExportConnection
+	https://msdn.microsoft.com/en-us/library/microsoft.metadirectoryservices.imaextensible2callexport.closeexportconnection.aspx
+
+	Clean up process for closing data stream ect.
+#>
 Function IMAExtensible2CallExport.CloseExportConnection{
 	Param
     (

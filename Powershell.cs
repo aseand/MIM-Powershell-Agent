@@ -3,6 +3,7 @@
  * 2016-02-17 Add support for ReloadPowerShellScript (LastWriteTime)
  *            Add support for DeclineMappingException
  * 2016-05-19 Fix minor error
+ * 2016-06-01 Add trace logs for exec time
  */
 
 using System;
@@ -59,6 +60,8 @@ namespace LD.IdentityManagement.Agent
 
         public Collection<PSObject> InvokeCommand(string Command, Dictionary<string, object> Parameters)
         {
+            DateTime StartTime = DateTime.Now;
+
             Collection<PSObject> PSObjects = null;
             try
             {
@@ -85,6 +88,9 @@ namespace LD.IdentityManagement.Agent
                 logger.Error(e.StackTrace);
                 throw e;
             }
+
+            if (this.IsDebugEnabled)
+                this.logger.Debug("Invoke command: {0} in {1}ms", Command, (DateTime.Now - StartTime).TotalMilliseconds);
 
             return PSObjects;
         }
@@ -123,6 +129,8 @@ namespace LD.IdentityManagement.Agent
 
             if (Reload)
             {
+                DateTime StartTime = DateTime.Now;
+
                 if (this.IsDebugEnabled)
                     this.logger.Debug("Reload script");
 
@@ -131,6 +139,7 @@ namespace LD.IdentityManagement.Agent
                 this.ScriptList.Keys.CopyTo(ScriptList, 0);
                 this.ScriptList.Clear();
 
+                DateTime StartPSVariableTime = DateTime.Now;
                 //Get PowerShellInstance PSVariable
                 Dictionary<string, PSVariable> PSVariableList = new Dictionary<string, PSVariable>();
                 Collection<PSObject> list = this.InvokeCommand("Get-Variable", null);
@@ -141,15 +150,24 @@ namespace LD.IdentityManagement.Agent
                         {
                             PSVariable temp = (PSVariable)item.BaseObject;
                             PSVariableList.Add(temp.Name, temp);
+
+                            if (this.IsDebugEnabled)
+                                this.logger.Debug("Save variabel '{0}'", temp.Name);
+
                         }
                     }
                 }
+
+                if (this.IsDebugEnabled)
+                    this.logger.Debug("Save variabels in {0}ms", (DateTime.Now - StartPSVariableTime).TotalMilliseconds);
+
 
                 //Dispose and Create new, BUT Dont run Initialize!
                 this.PowerShell.Dispose();
                 this.PowerShell = null;
                 LoadScriptList(ScriptList, false);
 
+                StartPSVariableTime = DateTime.Now;
                 //Reset PSVariable
                 list = this.InvokeCommand("Get-Variable", null);
                 foreach (PSObject item in list)
@@ -164,10 +182,13 @@ namespace LD.IdentityManagement.Agent
                         }
                     }
                 }
-                if(this.IsDebugEnabled)
-                    logger.Debug("Set PSVariable(s): {0}", string.Join(",", PSVariableList.Keys));
                 foreach (PSVariable item in PSVariableList.Values)
                     this.PowerShell.Runspace.SessionStateProxy.PSVariable.Set(item);
+                if (this.IsDebugEnabled)
+                    logger.Debug("Set PSVariable(s): {0} in {1}ms", string.Join(",", PSVariableList.Keys), (DateTime.Now - StartPSVariableTime).TotalMilliseconds);
+
+                if (this.IsDebugEnabled)
+                    this.logger.Debug("Reload script in {0}ms", (DateTime.Now - StartTime).TotalMilliseconds);
             }
 
         }
@@ -175,11 +196,12 @@ namespace LD.IdentityManagement.Agent
         public void LoadScriptList(string Script, bool RunInitialize)
         {
             LoadScriptList(new string[] { Script }, RunInitialize);
-
         }
 
         public void LoadScriptList(string[] ScriptList, bool RunInitialize)
         {
+            DateTime StartTime = DateTime.Now;
+
             if (this.PowerShell == null)
             {
                 if (this.IsDebugEnabled)
@@ -196,10 +218,13 @@ namespace LD.IdentityManagement.Agent
             {
                 if (System.IO.File.Exists(scriptfile))
                 {
+                    
                     if (!this.ScriptList.ContainsKey(scriptfile))
                     {
+                        DateTime StartLoadTime = DateTime.Now;
                         if (this.IsDebugEnabled)
                             this.logger.Debug("Load: {0}", scriptfile);
+
                         //load scriptfile
                         this.PowerShell.AddScript(string.Format(". '{0}'", scriptfile));
                         this.PowerShell.Invoke();
@@ -208,7 +233,11 @@ namespace LD.IdentityManagement.Agent
                         //Add fileinfo to list
                         System.IO.FileInfo fileinfo = new System.IO.FileInfo(scriptfile);
                         this.ScriptList.Add(scriptfile, fileinfo);
+
+                        if (this.IsDebugEnabled)
+                            this.logger.Debug("Loaded {0} in : {1}ms", scriptfile,(DateTime.Now-StartLoadTime).TotalMilliseconds);
                     }
+
                 }
                 else
                 {
@@ -216,12 +245,22 @@ namespace LD.IdentityManagement.Agent
                 }
             }
 
+
+
             if (RunInitialize)
             {
+                DateTime StartInitializeTime = DateTime.Now;
+
                 if (this.IsDebugEnabled)
                     this.logger.Debug("Initialize script");
                 InvokeCommand("Initialize", new Dictionary<string, object>() { { "logger", this.logger }, { "MAName", this.MA_NAME }, { "Config", this.Config } });
+
+                if (this.IsDebugEnabled)
+                    this.logger.Debug("Initialize script in {0}ms", (DateTime.Now - StartInitializeTime).TotalMilliseconds);
             }
+
+            if (this.IsDebugEnabled)
+                this.logger.Debug("Create PowerShellInstance in {0}ms", (DateTime.Now - StartTime).TotalMilliseconds);
         }
 
     }
@@ -303,6 +342,9 @@ namespace LD.IdentityManagement.Agent
                 CurentPowerShellInstance = new PowerShellInstance(loggerFullName + "." + curent_MA_NAME);
                 PowerShellInstance.Add(curent_MA_NAME, CurentPowerShellInstance);
             }
+            if (IsDebugEnabled)
+                logger.Debug("IMASynchronization path: {0}", CurentPowerShellInstance.Config["IMASynchronization"]);
+
             CurentPowerShellInstance.LoadScriptList(CurentPowerShellInstance.Config["IMASynchronization"], true);
             CurentPowerShellInstance.InvokeCommand("IMASynchronization.Initialize", null);
 
@@ -579,6 +621,8 @@ namespace LD.IdentityManagement.Agent
 
         void IMVSynchronization.Provision(MVEntry mventry)
         {
+            DateTime StartTime = DateTime.Now;
+
             if (IsDebugEnabled)
                 logger.Debug("Start IMVSynchronization.Provision");
 
@@ -590,12 +634,17 @@ namespace LD.IdentityManagement.Agent
                     logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
                     throw (new Exception("PowerShell instance is null"));
                 }
+                DateTime StartInvokeTime = DateTime.Now;
+                if (IsDebugEnabled)
+                    logger.Debug("Start IMVSynchronization.Provision on {0} ", curent_MA_NAME);
                 CurentPowerShellInstance.InvokeCommand("IMVSynchronization.Provision", new Dictionary<string, object>() { { "MVEntry", mventry } });
+                if (IsDebugEnabled)
+                    logger.Debug("Start IMVSynchronization.Provision on {0} in {1}ms", curent_MA_NAME, (DateTime.Now - StartInvokeTime).TotalMilliseconds);
 
             }
 
             if (IsDebugEnabled)
-                logger.Debug("Start IMVSynchronization.Provision");
+                logger.Debug("Done IMVSynchronization.Provision in {0}ms", (DateTime.Now - StartTime).TotalMilliseconds);
         }
 
         bool IMVSynchronization.ShouldDeleteFromMV(CSEntry csentry, MVEntry mventry)
@@ -976,6 +1025,7 @@ namespace LD.IdentityManagement.Agent
                 logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
                 throw (new Exception("PowerShell instance is null"));
             }
+            
             PutExportEntriesResults result = GetFirstObjectOf<PutExportEntriesResults>(CurentPowerShellInstance.InvokeCommand("IMAExtensible2CallExport.PutExportEntries", new Dictionary<string, object>() { 
             { "CSEntryChanges", csentries }
             }));
