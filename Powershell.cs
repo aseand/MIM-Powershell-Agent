@@ -1,9 +1,10 @@
-﻿/* 2015-02-09 Anders Åsén Landstinget Dalarna
+/* 2015-02-09 Anders Åsén Landstinget Dalarna
  * 2015-09-17 Add support for run ps on IMASynchronization, IMVSynchronization, IMAExtensible2
  * 2016-02-17 Add support for ReloadPowerShellScript (LastWriteTime)
  *            Add support for DeclineMappingException
  * 2016-05-19 Fix minor error
  * 2016-06-01 Add trace logs for exec time
+ * 2017-04-13 Fix '.' name bug
  */
 
 using System;
@@ -27,13 +28,14 @@ namespace LD.IdentityManagement.Agent
         private PowerShell PowerShell { get; set; }
         private Dictionary<string, FileInfo> ScriptList { get; set; }
 
-        public PowerShellInstance(string FullName)
+        public PowerShellInstance(string LogName, string MA_NAME)
         {
-            this.logger = NLog.LogManager.GetLogger(FullName);
-            
+            this.logger = NLog.LogManager.GetLogger(LogName);
+            this.MA_NAME = MA_NAME;
+
             try
             {
-                this.MA_NAME = FullName.Substring(FullName.LastIndexOf('.') + 1);
+                
                 this.Config = new LD.IdentityManagement.Utils.Config(MA_NAME, null);
                 this.IsDebugEnabled = this.Config["IsDebugEnabled"] == "" ? false : bool.Parse(this.Config["IsDebugEnabled"]);
                 this.PowerShell = null;
@@ -339,7 +341,7 @@ namespace LD.IdentityManagement.Agent
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                CurentPowerShellInstance = new PowerShellInstance(loggerFullName + "." + curent_MA_NAME);
+                CurentPowerShellInstance = new PowerShellInstance($"{loggerFullName}.{curent_MA_NAME}", curent_MA_NAME);
                 PowerShellInstance.Add(curent_MA_NAME, CurentPowerShellInstance);
             }
             if (IsDebugEnabled)
@@ -585,7 +587,7 @@ namespace LD.IdentityManagement.Agent
                 PowerShellInstance CurentPowerShellInstance;
                 if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
                 {
-                    CurentPowerShellInstance = new PowerShellInstance(loggerFullName + "." + curent_MA_NAME);
+                    CurentPowerShellInstance = new PowerShellInstance($"{loggerFullName}.{curent_MA_NAME}", curent_MA_NAME);
                     PowerShellInstance.Add(curent_MA_NAME, CurentPowerShellInstance);
                 }
 
@@ -725,7 +727,7 @@ namespace LD.IdentityManagement.Agent
             if (IsDebugEnabled)
                 logger.Debug("Load: {0}", IMAExtensible2Script);
 
-            PowerShellInstance CurrentPowerShellInstance = new Agent.PowerShellInstance(loggerFullName);
+            PowerShellInstance CurrentPowerShellInstance = new Agent.PowerShellInstance($"{loggerFullName}.{MA_NAME}", MA_NAME);
             CurrentPowerShellInstance.LoadScriptList(IMAExtensible2Script,true);
             list = GetFirstObjectOf<System.Collections.Generic.List<ConfigParameterDefinition>>(CurrentPowerShellInstance.InvokeCommand("IMAExtensible2GetParameters.GetConfigParameters", new Dictionary<string, object>() { 
                     { "ConfigParameters", configParameters } ,
@@ -753,7 +755,7 @@ namespace LD.IdentityManagement.Agent
                 if (IsDebugEnabled)
                     logger.Debug("Load: {0}", IMAExtensible2GetCapabilitiesEx);
 
-                PowerShellInstance CurrentPowerShellInstance = new Agent.PowerShellInstance(loggerFullName);
+                PowerShellInstance CurrentPowerShellInstance = new Agent.PowerShellInstance($"{loggerFullName}.{MA_NAME}", MA_NAME);
                 CurrentPowerShellInstance.LoadScriptList(IMAExtensible2GetCapabilitiesEx,true);
                 result = GetFirstObjectOf<MACapabilities>(CurrentPowerShellInstance.InvokeCommand("IMAExtensible2GetCapabilitiesEx.GetCapabilitiesEx", null));
 
@@ -807,7 +809,7 @@ namespace LD.IdentityManagement.Agent
             if (IsDebugEnabled)
                 logger.Debug("Load: {0}", configParameters["IMAExtensible2GetSchema"].Value);
 
-            PowerShellInstance CurrentPowerShellInstance = new Agent.PowerShellInstance(loggerFullName);
+            PowerShellInstance CurrentPowerShellInstance = new Agent.PowerShellInstance($"{loggerFullName}.{MA_NAME}", MA_NAME);
             CurrentPowerShellInstance.LoadScriptList(configParameters["IMAExtensible2GetSchema"].Value,true);
             result = GetFirstObjectOf<Schema>(CurrentPowerShellInstance.InvokeCommand("IMAExtensible2GetSchema.GetSchema", new Dictionary<string, object>() { { "ConfigParameters", configParameters } }));
 
@@ -846,7 +848,7 @@ namespace LD.IdentityManagement.Agent
             if (IsDebugEnabled)
                 logger.Debug("Load: {0}", configParameters["IMAExtensible2GetParameters"].Value);
 
-            PowerShellInstance CurrentPowerShellInstance = new Agent.PowerShellInstance(loggerFullName);
+            PowerShellInstance CurrentPowerShellInstance = new Agent.PowerShellInstance($"{loggerFullName}.{MA_NAME}", MA_NAME);
             CurrentPowerShellInstance.LoadScriptList(configParameters["IMAExtensible2GetParameters"].Value,true);
             result = GetFirstObjectOf<ParameterValidationResult>(CurrentPowerShellInstance.InvokeCommand("IMAExtensible2GetParameters.ValidateConfigParameters", new Dictionary<string, object>() { 
             { "ConfigParameters", configParameters } ,
@@ -898,7 +900,7 @@ namespace LD.IdentityManagement.Agent
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                CurentPowerShellInstance = new PowerShellInstance(loggerFullName + "." + curent_MA_NAME);
+                CurentPowerShellInstance = new PowerShellInstance($"{loggerFullName}.{curent_MA_NAME}", curent_MA_NAME);
                 PowerShellInstance.Add(curent_MA_NAME, CurentPowerShellInstance);
             }
             CurentPowerShellInstance.LoadScriptList(configParameters["IMAExtensible2CallImport"].Value,true);
@@ -998,7 +1000,7 @@ namespace LD.IdentityManagement.Agent
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                CurentPowerShellInstance = new PowerShellInstance(loggerFullName + "." + curent_MA_NAME);
+                CurentPowerShellInstance = new PowerShellInstance($"{loggerFullName}.{curent_MA_NAME}", curent_MA_NAME);
                 PowerShellInstance.Add(curent_MA_NAME, CurentPowerShellInstance);
             }
             CurentPowerShellInstance.LoadScriptList(configParameters["IMAExtensible2CallExport"].Value,true);
@@ -1074,7 +1076,7 @@ namespace LD.IdentityManagement.Agent
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                CurentPowerShellInstance = new PowerShellInstance(loggerFullName + "." + curent_MA_NAME);
+                CurentPowerShellInstance = new PowerShellInstance($"{loggerFullName}.{curent_MA_NAME}", curent_MA_NAME);
                 PowerShellInstance.Add(curent_MA_NAME, CurentPowerShellInstance);
             }
             CurentPowerShellInstance.LoadScriptList(configParameters["IMAExtensible2Password"].Value,true);
