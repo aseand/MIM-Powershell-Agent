@@ -1,28 +1,29 @@
-/* 2015-02-09 Anders Åsén Landstinget Dalarna
+/* 2015-02-09 Anders Åsén
  * 2015-09-17 Add support for run ps on IMASynchronization, IMVSynchronization, IMAExtensible2
  * 2016-02-17 Add support for ReloadPowerShellScript (LastWriteTime)
  *            Add support for DeclineMappingException
  * 2016-05-19 Fix minor error
  * 2016-06-01 Add trace logs for exec time
  * 2017-04-13 Fix '.' name bug
+ * 2018-09-06 Rename namespace
+ *              
  */
 
 using System;
 using System.Collections.Generic;
-using System.Text;
 using System.Collections.ObjectModel;
 using System.Management.Automation;
 using Microsoft.MetadirectoryServices;
 using System.IO;
 
-using LD.IdentityManagement.Utils;
+using Utils;
 
-namespace LD.IdentityManagement.Agent
+namespace MIM
 {
     class PowerShellInstance
     {
         private string MA_NAME { get; set; }
-        public LD.IdentityManagement.Utils.Config Config { get; set; }
+        public Config Config { get; set; }
         private NLog.Logger logger { get; set; }
         private bool IsDebugEnabled { get; set; }
         private PowerShell PowerShell { get; set; }
@@ -35,8 +36,7 @@ namespace LD.IdentityManagement.Agent
 
             try
             {
-                
-                this.Config = new LD.IdentityManagement.Utils.Config(MA_NAME, null);
+                this.Config = new Config(MA_NAME, null);
                 this.IsDebugEnabled = this.Config["IsDebugEnabled"] == "" ? false : bool.Parse(this.Config["IsDebugEnabled"]);
                 this.PowerShell = null;
                 this.ScriptList = new Dictionary<string, FileInfo>();
@@ -290,14 +290,17 @@ namespace LD.IdentityManagement.Agent
             //MA name & Config
             loggerFullName = typeof(Powershell).FullName;
             MA_NAME = loggerFullName.Substring(loggerFullName.LastIndexOf('.') + 1);
-            Config = new LD.IdentityManagement.Utils.Config(MA_NAME, null);
-
+            Config = new Config(MA_NAME, null);
             //Log
+            
             logger = NLog.LogManager.GetLogger(loggerFullName);
             NLog.LogManager.Configuration = new NLog.Config.XmlLoggingConfiguration(Config.LoggingConfiguration);
             //Debug?
             //IsDebugEnabled = logger.IsDebugEnabled;
+            logger.Warn("dafsdf");
+            logger.Warn(loggerFullName);
             IsDebugEnabled = bool.Parse(Config["IsDebugEnabled"]);
+            
         }
 
 
@@ -727,7 +730,7 @@ namespace LD.IdentityManagement.Agent
             if (IsDebugEnabled)
                 logger.Debug("Load: {0}", IMAExtensible2Script);
 
-            PowerShellInstance CurrentPowerShellInstance = new Agent.PowerShellInstance($"{loggerFullName}.{MA_NAME}", MA_NAME);
+            PowerShellInstance CurrentPowerShellInstance = new MIM.PowerShellInstance($"{loggerFullName}.{MA_NAME}", MA_NAME);
             CurrentPowerShellInstance.LoadScriptList(IMAExtensible2Script,true);
             list = GetFirstObjectOf<System.Collections.Generic.List<ConfigParameterDefinition>>(CurrentPowerShellInstance.InvokeCommand("IMAExtensible2GetParameters.GetConfigParameters", new Dictionary<string, object>() { 
                     { "ConfigParameters", configParameters } ,
@@ -755,7 +758,7 @@ namespace LD.IdentityManagement.Agent
                 if (IsDebugEnabled)
                     logger.Debug("Load: {0}", IMAExtensible2GetCapabilitiesEx);
 
-                PowerShellInstance CurrentPowerShellInstance = new Agent.PowerShellInstance($"{loggerFullName}.{MA_NAME}", MA_NAME);
+                PowerShellInstance CurrentPowerShellInstance = new MIM.PowerShellInstance($"{loggerFullName}.{MA_NAME}", MA_NAME);
                 CurrentPowerShellInstance.LoadScriptList(IMAExtensible2GetCapabilitiesEx,true);
                 result = GetFirstObjectOf<MACapabilities>(CurrentPowerShellInstance.InvokeCommand("IMAExtensible2GetCapabilitiesEx.GetCapabilitiesEx", null));
 
@@ -809,7 +812,7 @@ namespace LD.IdentityManagement.Agent
             if (IsDebugEnabled)
                 logger.Debug("Load: {0}", configParameters["IMAExtensible2GetSchema"].Value);
 
-            PowerShellInstance CurrentPowerShellInstance = new Agent.PowerShellInstance($"{loggerFullName}.{MA_NAME}", MA_NAME);
+            PowerShellInstance CurrentPowerShellInstance = new MIM.PowerShellInstance($"{loggerFullName}.{MA_NAME}", MA_NAME);
             CurrentPowerShellInstance.LoadScriptList(configParameters["IMAExtensible2GetSchema"].Value,true);
             result = GetFirstObjectOf<Schema>(CurrentPowerShellInstance.InvokeCommand("IMAExtensible2GetSchema.GetSchema", new Dictionary<string, object>() { { "ConfigParameters", configParameters } }));
 
@@ -848,7 +851,7 @@ namespace LD.IdentityManagement.Agent
             if (IsDebugEnabled)
                 logger.Debug("Load: {0}", configParameters["IMAExtensible2GetParameters"].Value);
 
-            PowerShellInstance CurrentPowerShellInstance = new Agent.PowerShellInstance($"{loggerFullName}.{MA_NAME}", MA_NAME);
+            PowerShellInstance CurrentPowerShellInstance = new MIM.PowerShellInstance($"{loggerFullName}.{MA_NAME}", MA_NAME);
             CurrentPowerShellInstance.LoadScriptList(configParameters["IMAExtensible2GetParameters"].Value,true);
             result = GetFirstObjectOf<ParameterValidationResult>(CurrentPowerShellInstance.InvokeCommand("IMAExtensible2GetParameters.ValidateConfigParameters", new Dictionary<string, object>() { 
             { "ConfigParameters", configParameters } ,

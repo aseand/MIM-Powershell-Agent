@@ -1,0 +1,29 @@
+<IdentityManagement>
+	<LoggingConfiguration>C:\Program Files\Microsoft Forefront Identity Manager\2010\Synchronization Service\conf\NLog.config.xml</LoggingConfiguration>
+	<MIM>
+		<Exempel>Value</Exempel>
+		<ExampelProtectedData Protected="yes">Data</ExampelProtectedData>
+	</MIM>
+	<Agents>
+		<Powershell>
+			<IsDebugEnabled>true</IsDebugEnabled>
+			<IMAExtensible2GetParameters>C:\MIM-Script\SynchronizationRule-MA\SynchronizationRule-MA.ps1</IMAExtensible2GetParameters>
+			<IMVSynchronization-MA-List>
+				AD
+				Dir-test
+			</IMVSynchronization-MA-List>
+		</Powershell>
+		<Agent1>
+			<IMASynchronization>C:\MIM-Script\AD\AD.ps1</IMASynchronization>
+			<IMVSynchronization>C:\MIM-Script\AD\AD.ps1</IMVSynchronization>
+			<IsDebugEnabled>true</IsDebugEnabled>
+		</Agent1>
+		<Agent2>
+			<IMASynchronization>C:\MIM-Script\test\Test-agent.ps1</IMASynchronization>
+			<IMVSynchronization>C:\MIM-Script\test\Test-agent.ps1</IMVSynchronization>
+			<IsDebugEnabled>true</IsDebugEnabled>
+			<Agent2Exempel>Value</Agent2Exempel>
+			<Agent2ExampelProtectedData Protected="yes">Data</Agent2ExampelProtectedData>
+		</Agent2>
+	</Agents>
+</IdentityManagement>

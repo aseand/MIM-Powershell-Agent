@@ -1,20 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using System.Collections.ObjectModel;
-using System.Management.Automation;
-using Microsoft.MetadirectoryServices;
 using System.Xml;
 using System.IO;
-using System.Security;
 using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
-using System.Runtime.InteropServices;
 
-
-using LD.IdentityManagement.Utils;
-
-namespace LD.IdentityManagement.Utils
+namespace Utils
 {
     namespace Crypto
     {
@@ -41,123 +30,6 @@ namespace LD.IdentityManagement.Utils
         }
     }
 
-    /*public class ConfigJSON
-    {
-        private string ConfigName;
-        public string LoggingConfiguration;
-        Dictionary<string, Object> CurrentConfig = null;
-        private string ConfigFilePath = @"C:\Program Files\Microsoft Forefront Identity Manager\2010\Synchronization Service\conf\LD.IdentityManagement.Agents.Config.json";
-        private void Save(Dictionary<string, Object> NewConfig)
-        {
-            fastJSON.JSONParameters par = new fastJSON.JSONParameters();
-            File.WriteAllText(ConfigFilePath, fastJSON.JSON.ToNiceJSON(NewConfig, par), Encoding.UTF8);
-        }
-        public ConfigJSON()
-        { }
-        public ConfigJSON(string Name, string ConifgPath)
-        {
-            if (ConifgPath != null)
-                ConfigFilePath = ConifgPath;
-            if (File.Exists(ConfigFilePath))
-            {
-                //object temp = fastJSON.JSON.ToObject(File.ReadAllText(ConfigFilePath));
-                Dictionary<string, Object> Confi = fastJSON.JSON.ToObject<Dictionary<string, Object>>(File.ReadAllText(ConfigFilePath, Encoding.UTF8));
-                bool dirty = false;
-                LoggingConfiguration = ((List<object>)((Dictionary<string, Object>)Confi["LoggingConfiguration"])["File"])[0].ToString();
-                ConfigName = Name;
-                object temp;
-                if (Confi.TryGetValue(Name, out temp))
-                {
-                    CurrentConfig = (Dictionary<string, Object>)temp;
-                    foreach (string Key in CurrentConfig.Keys)
-                    {
-                        object[] Value = ((List<object>)CurrentConfig[Key]).ToArray();
-                        if (Value.Length > 1 && (Value[1].ToString() == "" || Value[1] == null))
-                        {
-                            Value[0] = LD.IdentityManagement.Utils.Crypto.ProtectedData.EncryptString(Value[0].ToString(), System.Security.Cryptography.DataProtectionScope.CurrentUser, null);
-                            Value[1] = "ProtectedData";
-                            CurrentConfig[Key] = Value;
-                            dirty = true;
-                        }
-                    }
-                    if (dirty)
-                    {
-                        Confi[Name] = CurrentConfig;
-                        Save(Confi);
-                    }
-                }
-            }
-        }
-        public string Get(String Name)
-        {
-            String returnValue = "";
-            if (CurrentConfig != null)
-            {
-                Object temp;
-                if (CurrentConfig.TryGetValue(Name, out temp))
-                {
-                    object[] Value = ((List<object>)temp).ToArray();
-                    if (Value != null)
-                    {
-                        if (Value.Length > 1 && Value[1].ToString() == "ProtectedData")
-                        {
-                            returnValue = LD.IdentityManagement.Utils.Crypto.ProtectedData.DecryptString(Value[0].ToString(), System.Security.Cryptography.DataProtectionScope.CurrentUser, null);
-                        }
-                        else
-                            returnValue = Value[0].ToString();
-                    }
-                }
-            }
-            return returnValue;
-        }
-        public object[] GetRwa(String Name)
-        {
-            object[] returnValue = null;
-            if (CurrentConfig != null)
-            {
-                returnValue = ((List<object>)CurrentConfig[Name]).ToArray();
-            }
-            return returnValue;
-        }
-        public bool Set(String Name, string[] NewValue)
-        {
-            bool returnValue = false;
-            if (CurrentConfig != null && NewValue != null)
-            {
-                if (File.Exists(ConfigFilePath))
-                {
-                    Dictionary<string, Object> Confi = fastJSON.JSON.ToObject<Dictionary<string, Object>>(File.ReadAllText(ConfigFilePath, Encoding.UTF8));
-                    if (NewValue.Length > 1 && (NewValue[1].ToString() == "" || NewValue[1] == null))
-                    {
-                        NewValue[0] = LD.IdentityManagement.Utils.Crypto.ProtectedData.EncryptString(NewValue[0], System.Security.Cryptography.DataProtectionScope.CurrentUser, null);
-                        NewValue[1] = "ProtectedData";
-                    }
-                    CurrentConfig[Name] = NewValue;
-                    Confi[ConfigName] = CurrentConfig;
-                    Save(Confi);
-                    returnValue = true;
-                }
-            }
-            return returnValue;
-        }
-        public bool SetRwa(String Name, string[] NewValue)
-        {
-            bool returnValue = false;
-            if (CurrentConfig != null && NewValue != null)
-            {
-                if (File.Exists(ConfigFilePath))
-                {
-                    Dictionary<string, Object> Confi = fastJSON.JSON.ToObject<Dictionary<string, Object>>(File.ReadAllText(ConfigFilePath, Encoding.UTF8));
-                    CurrentConfig[Name] = NewValue;
-                    Confi[ConfigName] = CurrentConfig;
-                    Save(Confi);
-                    returnValue = true;
-                }
-            }
-            return returnValue;
-        }
-    }*/
-
     public class ConfigXML
     {
         private XmlNode CurrentNode;
@@ -165,9 +37,7 @@ namespace LD.IdentityManagement.Utils
         public string LoggingConfiguration;
         private DateTime FileTimeStamp;
         private string CurrentNodeName;
-
-        private string ConfigFilePath = @"C:\Program Files\Microsoft Forefront Identity Manager\2010\Synchronization Service\conf\LD.IdentityManagement.Agents.Config.xml";
-
+        private string ConfigFilePath = @"C:\Program Files\Microsoft Forefront Identity Manager\2010\Synchronization Service\conf\IdentityManagement.Agents.Config.xml";
 
         public ConfigXML()
         { }
@@ -208,7 +78,7 @@ namespace LD.IdentityManagement.Utils
                     }
                     if (CurrentNode.Attributes["ProtectedType"] != null && CurrentNode.Attributes["ProtectedType"].Value == "ProtectedData")
                     {
-                        CurrentNode[name].InnerText = LD.IdentityManagement.Utils.Crypto.ProtectedData.EncryptString(value, System.Security.Cryptography.DataProtectionScope.CurrentUser, null);
+                        CurrentNode[name].InnerText = Utils.Crypto.ProtectedData.EncryptString(value, System.Security.Cryptography.DataProtectionScope.CurrentUser, null);
 
                         if (CurrentNode[name].Attributes["Protected"] == null)
                             CurrentNode[name].Attributes.Append(CurrentNode.OwnerDocument.CreateAttribute("Protected"));
@@ -253,19 +123,19 @@ namespace LD.IdentityManagement.Utils
                 XmlDocument XmlConfig = new XmlDocument();
                 XmlConfig.Load(ConfigFilePath);
 
-                LoggingConfiguration = XmlConfig["LD.IdentityManagement"]["LoggingConfiguration"].InnerText;
+                LoggingConfiguration = XmlConfig["IdentityManagement"]["LoggingConfiguration"].InnerText;
 
                 bool dirty = false;
-                if (XmlConfig["LD.IdentityManagement"]["FIM"] != null)
+                if (XmlConfig["IdentityManagement"]["MIM"] != null)
                 {
-                    ExtraNode = XmlConfig["LD.IdentityManagement"]["FIM"];
+                    ExtraNode = XmlConfig["IdentityManagement"]["MIM"];
                     dirty |= SetProtectedNode(ExtraNode);
                 }
 
 
-                if (XmlConfig["LD.IdentityManagement"]["Agents"][CurrentNodeName] != null)
+                if (XmlConfig["IdentityManagement"]["Agents"][CurrentNodeName] != null)
                 {
-                    CurrentNode = XmlConfig["LD.IdentityManagement"]["Agents"][CurrentNodeName];
+                    CurrentNode = XmlConfig["IdentityManagement"]["Agents"][CurrentNodeName];
                     dirty |= SetProtectedNode(CurrentNode);
                 }
                 //Dirty save config
@@ -281,7 +151,7 @@ namespace LD.IdentityManagement.Utils
             {
                 if (Node.Attributes.Count > 0 && Node.Attributes["Protected"] != null && Node.Attributes["Protected"].Value.ToLower() == "yes" && Node.Attributes["ProtectedType"] == null)
                 {
-                    Node.InnerText = LD.IdentityManagement.Utils.Crypto.ProtectedData.EncryptString(Node.InnerText, System.Security.Cryptography.DataProtectionScope.CurrentUser, null);
+                    Node.InnerText = Utils.Crypto.ProtectedData.EncryptString(Node.InnerText, System.Security.Cryptography.DataProtectionScope.CurrentUser, null);
 
                     Node.Attributes.Append(Node.OwnerDocument.CreateAttribute("ProtectedType"));
 
@@ -299,7 +169,7 @@ namespace LD.IdentityManagement.Utils
             {
                 if (Node.Attributes["ProtectedType"] != null && Node.Attributes["ProtectedType"].Value == "ProtectedData")
                 {
-                    returnValue = LD.IdentityManagement.Utils.Crypto.ProtectedData.DecryptString(Node.InnerText, System.Security.Cryptography.DataProtectionScope.CurrentUser, null);
+                    returnValue = Utils.Crypto.ProtectedData.DecryptString(Node.InnerText, System.Security.Cryptography.DataProtectionScope.CurrentUser, null);
                 }
             }
             else
@@ -338,7 +208,7 @@ namespace LD.IdentityManagement.Utils
                 }
                 if (ProtectedData)
                 {
-                    CurrentNode[Name].InnerText = LD.IdentityManagement.Utils.Crypto.ProtectedData.EncryptString(NewValue, System.Security.Cryptography.DataProtectionScope.CurrentUser, null);
+                    CurrentNode[Name].InnerText = Utils.Crypto.ProtectedData.EncryptString(NewValue, System.Security.Cryptography.DataProtectionScope.CurrentUser, null);
 
                     if (CurrentNode[Name].Attributes["Protected"] == null)
                         CurrentNode[Name].Attributes.Append(CurrentNode.OwnerDocument.CreateAttribute("Protected"));

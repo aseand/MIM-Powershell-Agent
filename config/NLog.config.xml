@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<nlog xmlns="http://www.nlog-project.org/schemas/NLog.xsd"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+    <targets>
+        <target name="asyncFile" xsi:type="AsyncWrapper">
+            <target name="logfile" xsi:type="File" fileName="C:\MIM-log\file.log" />
+        </target>
+		<target name="MIM.Powershell" xsi:type="File" fileName="C:\MIM-log\MIM.Powershell.log" />
+    </targets>
+
+    <rules>
+        <logger name="*" minlevel="Debug" writeTo="asyncFile" />
+        <logger name="MIM.Powershell" minlevel="Debug" writeTo="MIM.Powershell" />
+    </rules>
+</nlog>
