@@ -297,7 +297,6 @@ namespace MIM
             NLog.LogManager.Configuration = new NLog.Config.XmlLoggingConfiguration(Config.LoggingConfiguration);
             //Debug?
             //IsDebugEnabled = logger.IsDebugEnabled;
-            logger.Warn("dafsdf");
             logger.Warn(loggerFullName);
             IsDebugEnabled = bool.Parse(Config["IsDebugEnabled"]);
             
