@@ -37,7 +37,7 @@ namespace Utils
         public string LoggingConfiguration;
         private DateTime FileTimeStamp;
         private string CurrentNodeName;
-        private string ConfigFilePath = @"C:\Program Files\Microsoft Forefront Identity Manager\2010\Synchronization Service\conf\IdentityManagement.Agents.Config.xml";
+        private string ConfigFilePath = @"C:\Program Files\Microsoft Forefront Identity Manager\2010\Synchronization Service\Config\IdentityManagement.Agents.Config.xml";
 
         public ConfigXML()
         { }
