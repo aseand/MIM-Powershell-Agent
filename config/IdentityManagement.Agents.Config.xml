@@ -1,5 +1,5 @@
 <IdentityManagement>
-	<LoggingConfiguration>C:\Program Files\Microsoft Forefront Identity Manager\2010\Synchronization Service\conf\NLog.config.xml</LoggingConfiguration>
+	<LoggingConfiguration>C:\Program Files\Microsoft Forefront Identity Manager\2010\Synchronization Service\Config\NLog.config.xml</LoggingConfiguration>
 	<MIM>
 		<Exempel>Value</Exempel>
 		<ExampelProtectedData Protected="yes">Data</ExampelProtectedData>
