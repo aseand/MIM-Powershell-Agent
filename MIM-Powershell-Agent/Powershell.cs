@@ -1,31 +1,22 @@
-/* 2015-02-09 Anders Åsén
- * 2015-09-17 Add support for run ps on IMASynchronization, IMVSynchronization, IMAExtensible2
- * 2016-02-17 Add support for ReloadPowerShellScript (LastWriteTime)
- *            Add support for DeclineMappingException
- * 2016-05-19 Fix minor error
- * 2016-06-01 Add trace logs for exec time
- * 2017-04-13 Fix '.' name bug
- * 2018-09-06 Rename namespace
- *              
- */
-
 using System;
+using System.IO;
+using System.Text;
+using System.Diagnostics;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Management.Automation;
-using Microsoft.MetadirectoryServices;
-using System.IO;
 
-using Utils;
+using Microsoft.MetadirectoryServices;
+using Microsoft.Win32;
+
+using NLog;
 
 namespace MIM
 {
     class PowerShellInstance
     {
         private string MA_NAME { get; set; }
-        public Config Config { get; set; }
         private NLog.Logger logger { get; set; }
-        private bool IsDebugEnabled { get; set; }
         private PowerShell PowerShell { get; set; }
         private Dictionary<string, FileInfo> ScriptList { get; set; }
 
@@ -36,16 +27,14 @@ namespace MIM
 
             try
             {
-                this.Config = new Config(MA_NAME, null);
-                this.IsDebugEnabled = this.Config["IsDebugEnabled"] == "" ? false : bool.Parse(this.Config["IsDebugEnabled"]);
                 this.PowerShell = null;
                 this.ScriptList = new Dictionary<string, FileInfo>();
             }
             catch (Exception e)
             {
-                logger.Error("{0}", e.Message);
-                logger.Error("{0}", e.Source);
-                logger.Error("{0}", e.StackTrace);
+                logger.Error(e.Message);
+                logger.Error(e.Source);
+                logger.Error(e.StackTrace);
                 throw e;
             }
         }
@@ -53,7 +42,7 @@ namespace MIM
         public void Dispose()
         {
             this.MA_NAME = null;
-            this.Config = null;
+            //this.Config = null;
             this.logger = null;
             this.PowerShell.Dispose();
             this.ScriptList.Clear();
@@ -67,9 +56,9 @@ namespace MIM
             Collection<PSObject> PSObjects = null;
             try
             {
-                if (this.IsDebugEnabled)
+                if (this.logger.IsDebugEnabled)
                 {
-                    this.logger.Debug("Invoke command: {0} Parameters: {1}", Command, (Parameters == null ? "" : string.Join(",", Parameters.Keys)));
+                    this.logger.Debug($"Invoke command: {Command} Parameters: { (Parameters == null ? "" : string.Join(",", Parameters.Keys))}");
                 }
                 ReloadScript();
 
@@ -91,8 +80,8 @@ namespace MIM
                 throw e;
             }
 
-            if (this.IsDebugEnabled)
-                this.logger.Debug("Invoke command: {0} in {1}ms", Command, (DateTime.Now - StartTime).TotalMilliseconds);
+            if (this.logger.IsTraceEnabled)
+                this.logger.Trace($"Invoke command: {Command} in {(DateTime.Now - StartTime).TotalMilliseconds}ms");
 
             return PSObjects;
         }
@@ -119,10 +108,10 @@ namespace MIM
                 System.IO.FileInfo newFilinfo = new System.IO.FileInfo(scriptfile);
                 if (this.ScriptList[scriptfile].LastWriteTime != newFilinfo.LastWriteTime)
                 {
-                    this.logger.Info("LastWriteTime change on: {0}", scriptfile);
-                    if (this.IsDebugEnabled)
+                    this.logger.Info($"LastWriteTime change on: {scriptfile}");
+                    if (this.logger.IsDebugEnabled)
                     {
-                        this.logger.Debug("{0} : {1}", this.ScriptList[scriptfile].LastWriteTime, newFilinfo.LastWriteTime);
+                        this.logger.Debug($"{this.ScriptList[scriptfile].LastWriteTime} : {newFilinfo.LastWriteTime}");
                     }
                     Reload = true;
                     break;
@@ -133,7 +122,7 @@ namespace MIM
             {
                 DateTime StartTime = DateTime.Now;
 
-                if (this.IsDebugEnabled)
+                if (this.logger.IsDebugEnabled)
                     this.logger.Debug("Reload script");
 
                 //Copy and clear list
@@ -145,7 +134,8 @@ namespace MIM
                 //Get PowerShellInstance PSVariable
                 Dictionary<string, PSVariable> PSVariableList = new Dictionary<string, PSVariable>();
                 Collection<PSObject> list = this.InvokeCommand("Get-Variable", null);
-                foreach(PSObject item in list){
+                foreach (PSObject item in list)
+                {
                     if (item != null && item.BaseObject != null)
                     {
                         if (item.BaseObject.GetType() == typeof(PSVariable))
@@ -153,15 +143,15 @@ namespace MIM
                             PSVariable temp = (PSVariable)item.BaseObject;
                             PSVariableList.Add(temp.Name, temp);
 
-                            if (this.IsDebugEnabled)
-                                this.logger.Debug("Save variabel '{0}'", temp.Name);
+                            if (this.logger.IsDebugEnabled)
+                                this.logger.Debug($"Save variabel '{temp.Name}'");
 
                         }
                     }
                 }
 
-                if (this.IsDebugEnabled)
-                    this.logger.Debug("Save variabels in {0}ms", (DateTime.Now - StartPSVariableTime).TotalMilliseconds);
+                if (this.logger.IsDebugEnabled)
+                    this.logger.Debug($"Save variabels in {(DateTime.Now - StartPSVariableTime).TotalMilliseconds}ms");
 
 
                 //Dispose and Create new, BUT Dont run Initialize!
@@ -186,11 +176,11 @@ namespace MIM
                 }
                 foreach (PSVariable item in PSVariableList.Values)
                     this.PowerShell.Runspace.SessionStateProxy.PSVariable.Set(item);
-                if (this.IsDebugEnabled)
-                    logger.Debug("Set PSVariable(s): {0} in {1}ms", string.Join(",", PSVariableList.Keys), (DateTime.Now - StartPSVariableTime).TotalMilliseconds);
-
-                if (this.IsDebugEnabled)
-                    this.logger.Debug("Reload script in {0}ms", (DateTime.Now - StartTime).TotalMilliseconds);
+                if (this.logger.IsTraceEnabled)
+                {
+                    this.logger.Trace($"Set PSVariable(s): {string.Join(", ", PSVariableList.Keys)} in {(DateTime.Now - StartPSVariableTime).TotalMilliseconds}ms");
+                    this.logger.Trace($"Reload script in {(DateTime.Now - StartTime).TotalMilliseconds}ms");
+                }
             }
 
         }
@@ -206,14 +196,14 @@ namespace MIM
 
             if (this.PowerShell == null)
             {
-                if (this.IsDebugEnabled)
+                if (this.logger.IsDebugEnabled)
                     this.logger.Debug("Create PowerShellInstance");
 
                 this.PowerShell = PowerShell.Create();
                 this.PowerShell.Streams.Error.DataAdded += this.Error_DataAdded;
             }
 
-            if (this.IsDebugEnabled)
+            if (this.logger.IsDebugEnabled)
                 this.logger.Debug("Load Script(s)");
 
             foreach (string scriptfile in ScriptList)
@@ -224,11 +214,11 @@ namespace MIM
                     if (!this.ScriptList.ContainsKey(scriptfile))
                     {
                         DateTime StartLoadTime = DateTime.Now;
-                        if (this.IsDebugEnabled)
-                            this.logger.Debug("Load: {0}", scriptfile);
+                        if (this.logger.IsDebugEnabled)
+                            this.logger.Debug($"Load: {scriptfile}");
 
                         //load scriptfile
-                        this.PowerShell.AddScript(string.Format(". '{0}'", scriptfile));
+                        this.PowerShell.AddScript($". '{scriptfile}'");
                         this.PowerShell.Invoke();
                         this.PowerShell.Commands.Clear();
 
@@ -236,14 +226,14 @@ namespace MIM
                         System.IO.FileInfo fileinfo = new System.IO.FileInfo(scriptfile);
                         this.ScriptList.Add(scriptfile, fileinfo);
 
-                        if (this.IsDebugEnabled)
-                            this.logger.Debug("Loaded {0} in : {1}ms", scriptfile,(DateTime.Now-StartLoadTime).TotalMilliseconds);
+                        if (this.logger.IsTraceEnabled)
+                            this.logger.Trace($"Loaded {scriptfile} in : {(DateTime.Now - StartLoadTime).TotalMilliseconds}ms");
                     }
 
                 }
                 else
                 {
-                    this.logger.Error("{0} dont exist", scriptfile);
+                    this.logger.Error($"{scriptfile} dont exist");
                 }
             }
 
@@ -253,16 +243,16 @@ namespace MIM
             {
                 DateTime StartInitializeTime = DateTime.Now;
 
-                if (this.IsDebugEnabled)
+                if (this.logger.IsDebugEnabled)
                     this.logger.Debug("Initialize script");
-                InvokeCommand("Initialize", new Dictionary<string, object>() { { "logger", this.logger }, { "MAName", this.MA_NAME }, { "Config", this.Config } });
+                InvokeCommand("Initialize", new Dictionary<string, object>() { { "logger", this.logger }, { "MAName", this.MA_NAME } });
 
-                if (this.IsDebugEnabled)
-                    this.logger.Debug("Initialize script in {0}ms", (DateTime.Now - StartInitializeTime).TotalMilliseconds);
+                if (this.logger.IsTraceEnabled)
+                    this.logger.Trace($"Initialize script in {(DateTime.Now - StartInitializeTime).TotalMilliseconds}ms");
             }
 
-            if (this.IsDebugEnabled)
-                this.logger.Debug("Create PowerShellInstance in {0}ms", (DateTime.Now - StartTime).TotalMilliseconds);
+            if (this.logger.IsTraceEnabled)
+                this.logger.Trace($"Create PowerShellInstance in {(DateTime.Now - StartTime).TotalMilliseconds}ms");
         }
 
     }
@@ -278,30 +268,85 @@ namespace MIM
         IMAExtensible2Password
     {
         private NLog.Logger logger = null;
-        private string MA_NAME;
-        private bool IsDebugEnabled = false;
         private string loggerFullName;
-        private Config Config;
         private Dictionary<string, PowerShellInstance> PowerShellInstance = new Dictionary<string, PowerShellInstance>();
         private string[] IMVSynchronizationList;
+        private string IMAExtensible2InitalScript = null;
 
         public Powershell()
         {
-            //MA name & Config
+            RegistryKey Registry = RegistryKey.OpenBaseKey(Microsoft.Win32.RegistryHive.LocalMachine, RegistryView.Registry64);
+            RegistryKey regKey = Registry.OpenSubKey(@"Software\aseand\MIM-Powershell-Agent");
+
+            Dictionary<string, string> RegConfig = new Dictionary<string, string>();
+            foreach (string name in regKey.GetValueNames())
+            {
+                RegConfig.Add(name, regKey.GetValue(name).ToString());
+            }
+            regKey.Close();
+
+
+            string LoggingConfigurationFullPath = RegConfig.ContainsKey("LoggingConfigurationFullPath") ? RegConfig["LoggingConfigurationFullPath"] : "";
+            IMAExtensible2InitalScript = RegConfig.ContainsKey("IMAExtensible2InitalScript") ? RegConfig["IMAExtensible2InitalScript"] : "";
+
+            string LoggingPath = "";
+            try
+            {
+                LoggingPath = MAUtils.MAFolder;
+            }
+            catch
+            {
+                try
+                {
+                    LoggingPath = Microsoft.MetadirectoryServices.Utils.WorkingDirectory;
+                }
+                catch
+                {
+                    LoggingPath = RegConfig.ContainsKey("LoggingPath") ? RegConfig["LoggingPath"] : Path.GetTempPath();
+                }
+            }
+             
+            int ArchiveAboveSizeMb = RegConfig.ContainsKey("ArchiveAboveSizeMb") ? int.Parse(RegConfig["ArchiveAboveSizeMb"]) : 10;
+            int MaxArchiveFiles = RegConfig.ContainsKey("MaxArchiveFiles") ? int.Parse(RegConfig["MaxArchiveFiles"]) : 20;
+
+            LogLevel MaxLogLevel = RegConfig.ContainsKey("MaxLogLevel") ? LogLevel.FromString(RegConfig["MaxLogLevel"]) : LogLevel.Fatal;
+            LogLevel MinLogLevel = RegConfig.ContainsKey("MinLogLevel") ? LogLevel.FromString(RegConfig["MinLogLevel"]) : LogLevel.Info;
+
             loggerFullName = typeof(Powershell).FullName;
-            MA_NAME = loggerFullName.Substring(loggerFullName.LastIndexOf('.') + 1);
-            Config = new Config(MA_NAME, null);
-            //Log
+
+            if (!string.IsNullOrEmpty(LoggingConfigurationFullPath) && File.Exists(LoggingConfigurationFullPath))
+            {
+                NLog.LogManager.Configuration = new NLog.Config.XmlLoggingConfiguration(LoggingConfigurationFullPath);
+            }
+            else
+            {
+                NLog.Targets.FileTarget target = new NLog.Targets.FileTarget()
+                {
+                    Name = loggerFullName,
+                    FileName = Path.Combine(LoggingPath, "MIM-Powershell-Agent.log"),
+                    ArchiveAboveSize = ArchiveAboveSizeMb * 1048576,
+                    MaxArchiveFiles = MaxArchiveFiles,
+                    ArchiveNumbering = NLog.Targets.ArchiveNumberingMode.Rolling,
+                    Encoding = Encoding.UTF8
+                };
+
+                NLog.Targets.Wrappers.AsyncTargetWrapper asyncTargetWrapper = new NLog.Targets.Wrappers.AsyncTargetWrapper()
+                {
+                    WrappedTarget = target
+                };
+
+                NLog.Config.LoggingConfiguration LoggingConfiguration = new NLog.Config.LoggingConfiguration();
+                LoggingConfiguration.AddRule(MinLogLevel, MaxLogLevel, asyncTargetWrapper);
+                NLog.LogManager.Configuration = LoggingConfiguration;
+            }
             
             logger = NLog.LogManager.GetLogger(loggerFullName);
-            NLog.LogManager.Configuration = new NLog.Config.XmlLoggingConfiguration(Config.LoggingConfiguration);
-            //Debug?
-            //IsDebugEnabled = logger.IsDebugEnabled;
-            logger.Warn(loggerFullName);
-            IsDebugEnabled = bool.Parse(Config["IsDebugEnabled"]);
-            
-        }
 
+            if (logger.IsDebugEnabled)
+            {
+                logger.Debug($"{loggerFullName} Initialize");
+            }
+        }
 
         /// <summary>
         /// Get first object in Collection that match type
@@ -317,8 +362,8 @@ namespace MIM
             {
                 if (obj != null && obj.BaseObject != null)
                 {
-                    if (IsDebugEnabled)
-                        logger.Debug("Object type : {0}", obj.BaseObject.GetType().Name);
+                    if (logger.IsDebugEnabled)
+                        logger.Debug($"Object type : {obj.BaseObject.GetType().Name}");
 
                     if (obj.BaseObject.GetType() == typeof(T))
                     {
@@ -326,7 +371,7 @@ namespace MIM
                         break;
                     }
                 }
-                else if (IsDebugEnabled)
+                else if (logger.IsDebugEnabled)
                     logger.Debug("Object is null!");
             }
             return returnObject;
@@ -337,8 +382,9 @@ namespace MIM
         void IMASynchronization.Initialize()
         {
             string curent_MA_NAME = Microsoft.MetadirectoryServices.Utils.WorkingDirectory.Substring(Microsoft.MetadirectoryServices.Utils.WorkingDirectory.LastIndexOf('\\') + 1);
-            if (IsDebugEnabled)
-                logger.Debug("Start IMASynchronization.Initialize {0}", curent_MA_NAME);
+
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Start IMASynchronization.Initialize {curent_MA_NAME}");
 
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
@@ -346,46 +392,47 @@ namespace MIM
                 CurentPowerShellInstance = new PowerShellInstance($"{loggerFullName}.{curent_MA_NAME}", curent_MA_NAME);
                 PowerShellInstance.Add(curent_MA_NAME, CurentPowerShellInstance);
             }
-            if (IsDebugEnabled)
-                logger.Debug("IMASynchronization path: {0}", CurentPowerShellInstance.Config["IMASynchronization"]);
+            string IMASynchronizationPath = Path.Combine(Microsoft.MetadirectoryServices.Utils.WorkingDirectory, "IMASynchronization.ps1");
+            if (logger.IsDebugEnabled)
+                logger.Debug($"IMASynchronization path: {IMASynchronizationPath}");
 
-            CurentPowerShellInstance.LoadScriptList(CurentPowerShellInstance.Config["IMASynchronization"], true);
+            CurentPowerShellInstance.LoadScriptList(IMASynchronizationPath, true);
             CurentPowerShellInstance.InvokeCommand("IMASynchronization.Initialize", null);
 
-            if (IsDebugEnabled)
-                logger.Debug("Done IMASynchronization.Initialize {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Done IMASynchronization.Initialize {curent_MA_NAME}");
         }
 
         void IMASynchronization.Terminate()
         {
             string curent_MA_NAME = Microsoft.MetadirectoryServices.Utils.WorkingDirectory.Substring(Microsoft.MetadirectoryServices.Utils.WorkingDirectory.LastIndexOf('\\') + 1);
 
-            if (IsDebugEnabled)
-                logger.Debug("Start IMASynchronization.Terminate {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Start IMASynchronization.Terminate {curent_MA_NAME}");
 
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                 throw (new Exception("PowerShell instance is null"));
             }
             CurentPowerShellInstance.InvokeCommand("IMASynchronization.Terminate", null);
 
-            if (IsDebugEnabled)
-                logger.Debug("Done IMASynchronization.Terminate {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Done IMASynchronization.Terminate {curent_MA_NAME}");
         }
 
         bool IMASynchronization.ShouldProjectToMV(CSEntry csentry, out string MVObjectType)
         {
             string curent_MA_NAME = Microsoft.MetadirectoryServices.Utils.WorkingDirectory.Substring(Microsoft.MetadirectoryServices.Utils.WorkingDirectory.LastIndexOf('\\') + 1);
 
-            if (IsDebugEnabled)
-                logger.Debug("Start IMASynchronization.ShouldProjectToMV {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Start IMASynchronization.ShouldProjectToMV {curent_MA_NAME}");
 
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                 throw (new Exception("PowerShell instance is null"));
             }
 
@@ -394,8 +441,8 @@ namespace MIM
             MVObjectType = GetFirstObjectOf<string>(List);
 
 
-            if (IsDebugEnabled)
-                logger.Debug("Done IMASynchronization.ShouldProjectToMV {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Done IMASynchronization.ShouldProjectToMV {curent_MA_NAME}");
 
             return result;
         }
@@ -404,20 +451,20 @@ namespace MIM
         {
             string curent_MA_NAME = Microsoft.MetadirectoryServices.Utils.WorkingDirectory.Substring(Microsoft.MetadirectoryServices.Utils.WorkingDirectory.LastIndexOf('\\') + 1);
 
-            if (IsDebugEnabled)
-                logger.Debug("Start IMASynchronization.Deprovision {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Start IMASynchronization.Deprovision {curent_MA_NAME}");
 
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                 throw (new Exception("PowerShell instance is null"));
             }
 
             DeprovisionAction result = GetFirstObjectOf<DeprovisionAction>(CurentPowerShellInstance.InvokeCommand("IMASynchronization.Deprovision", new Dictionary<string, object>() { { "CSEntry", csentry } }));
 
-            if (IsDebugEnabled)
-                logger.Debug("Start IMASynchronization.Deprovision {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Start IMASynchronization.Deprovision {curent_MA_NAME}");
 
             return result;
         }
@@ -426,19 +473,19 @@ namespace MIM
         {
             string curent_MA_NAME = Microsoft.MetadirectoryServices.Utils.WorkingDirectory.Substring(Microsoft.MetadirectoryServices.Utils.WorkingDirectory.LastIndexOf('\\') + 1);
 
-            if (IsDebugEnabled)
-                logger.Debug("Start IMASynchronization.FilterForDisconnection {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Start IMASynchronization.FilterForDisconnection {curent_MA_NAME}");
 
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                 throw (new Exception("PowerShell instance is null"));
             }
             bool result = GetFirstObjectOf<bool>(CurentPowerShellInstance.InvokeCommand("IMASynchronization.FilterForDisconnection", new Dictionary<string, object>() { { "CSEntry", csentry } }));
 
-            if (IsDebugEnabled)
-                logger.Debug("Done IMASynchronization.FilterForDisconnection {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Done IMASynchronization.FilterForDisconnection {curent_MA_NAME}");
 
             return result;
         }
@@ -447,16 +494,16 @@ namespace MIM
         {
             string curent_MA_NAME = Microsoft.MetadirectoryServices.Utils.WorkingDirectory.Substring(Microsoft.MetadirectoryServices.Utils.WorkingDirectory.LastIndexOf('\\') + 1);
 
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
             {
-                logger.Debug("Start IMASynchronization.MapAttributesForJoin {0}", curent_MA_NAME);
-                logger.Debug("FlowRuleName: {0} ", FlowRuleName);
+                logger.Debug($"Start IMASynchronization.MapAttributesForJoin {curent_MA_NAME}");
+                logger.Debug($"FlowRuleName: {FlowRuleName} ");
             }
 
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                 throw (new Exception("PowerShell instance is null"));
             }
             CurentPowerShellInstance.InvokeCommand("IMASynchronization.MapAttributesForJoin", new Dictionary<string, object>() { 
@@ -466,10 +513,10 @@ namespace MIM
             });
 
 
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
             {
-                logger.Debug("ValueCollection: {0}", string.Join(",", values.ToStringArray()));
-                logger.Debug("Done IMASynchronization.MapAttributesForJoin {0}", curent_MA_NAME);
+                logger.Debug($"ValueCollection: {(string.Join(", ", values.ToStringArray()))}");
+                logger.Debug($"Done IMASynchronization.MapAttributesForJoin {curent_MA_NAME}");
             }
         }
 
@@ -477,13 +524,13 @@ namespace MIM
         {
             string curent_MA_NAME = Microsoft.MetadirectoryServices.Utils.WorkingDirectory.Substring(Microsoft.MetadirectoryServices.Utils.WorkingDirectory.LastIndexOf('\\') + 1);
 
-            if (IsDebugEnabled)
-                logger.Debug("Start IMASynchronization.ResolveJoinSearch {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Start IMASynchronization.ResolveJoinSearch {curent_MA_NAME}");
 
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                 throw (new Exception("PowerShell instance is null"));
             }
             Collection<PSObject> List = CurentPowerShellInstance.InvokeCommand("IMASynchronization.ResolveJoinSearch", new Dictionary<string, object>() { 
@@ -495,8 +542,8 @@ namespace MIM
             bool result = GetFirstObjectOf<bool>(List);
             imventry = GetFirstObjectOf<int>(List);
 
-            if (IsDebugEnabled)
-                logger.Debug("Done IMASynchronization.ResolveJoinSearch {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Done IMASynchronization.ResolveJoinSearch {curent_MA_NAME}");
 
             return result;
         }
@@ -505,13 +552,13 @@ namespace MIM
         {
             string curent_MA_NAME = Microsoft.MetadirectoryServices.Utils.WorkingDirectory.Substring(Microsoft.MetadirectoryServices.Utils.WorkingDirectory.LastIndexOf('\\') + 1);
 
-            if (IsDebugEnabled)
-                logger.Debug("Start IMASynchronization.MapAttributesForImport {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Start IMASynchronization.MapAttributesForImport {curent_MA_NAME}");
 
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                 throw (new Exception("PowerShell instance is null"));
             }
             try
@@ -542,22 +589,22 @@ namespace MIM
             }
 
 
-            if (IsDebugEnabled)
-                logger.Debug("Done IMASynchronization.MapAttributesForImport {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Done IMASynchronization.MapAttributesForImport {curent_MA_NAME}");
         }
 
         void IMASynchronization.MapAttributesForExport(string FlowRuleName, MVEntry mventry, CSEntry csentry)
         {
             string curent_MA_NAME = Microsoft.MetadirectoryServices.Utils.WorkingDirectory.Substring(Microsoft.MetadirectoryServices.Utils.WorkingDirectory.LastIndexOf('\\') + 1);
 
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
                 logger.Debug("Start IMASynchronization.MapAttributesForExport {0}", curent_MA_NAME);
 
 
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                 throw (new Exception("PowerShell instance is null"));
             }
             bool result = GetFirstObjectOf<bool>(CurentPowerShellInstance.InvokeCommand("IMASynchronization.MapAttributesForExport", new Dictionary<string, object>() { 
@@ -566,8 +613,8 @@ namespace MIM
             { "MVEntry", mventry } 
             }));
 
-            if (IsDebugEnabled)
-                logger.Debug("Done IMASynchronization.MapAttributesForExport {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Done IMASynchronization.MapAttributesForExport {curent_MA_NAME}");
         }
 
         #endregion
@@ -576,34 +623,45 @@ namespace MIM
 
         void IMVSynchronization.Initialize()
         {
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
                 logger.Debug("Start IMVSynchronization.Initialize");
 
-            IMVSynchronizationList = Config["IMVSynchronization-MA-List"].Replace("\t", "").Split(new char[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-
-            foreach (string curent_MA_NAME in IMVSynchronizationList)
+            List<string> MAIMVSynchronizationList = new List<string>();
+            var MAs = Microsoft.MetadirectoryServices.Utils.MAs.GetEnumerator();
+            while (MAs.MoveNext())
             {
-                if (IsDebugEnabled)
-                    logger.Debug("Start IMVSynchronization.Initialize {0}", curent_MA_NAME);
+                string IMVSynchronizationPath = Path.Combine(Microsoft.MetadirectoryServices.Utils.WorkingDirectory, MAs.Current, "IMVSynchronization.ps1");
 
-                PowerShellInstance CurentPowerShellInstance;
-                if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
+                if (File.Exists(IMVSynchronizationPath))
                 {
-                    CurentPowerShellInstance = new PowerShellInstance($"{loggerFullName}.{curent_MA_NAME}", curent_MA_NAME);
-                    PowerShellInstance.Add(curent_MA_NAME, CurentPowerShellInstance);
+                    MAIMVSynchronizationList.Add(MAs.Current);
+
+                    if (logger.IsDebugEnabled)
+                        logger.Debug($"Found IMASynchronization script path: {IMVSynchronizationPath}");
+
+                    PowerShellInstance CurentPowerShellInstance;
+                    if (!PowerShellInstance.TryGetValue(MAs.Current, out CurentPowerShellInstance))
+                    {
+                        CurentPowerShellInstance = new PowerShellInstance($"{loggerFullName}.{MAs.Current}", MAs.Current);
+                        PowerShellInstance.Add(MAs.Current, CurentPowerShellInstance);
+
+                        CurentPowerShellInstance.LoadScriptList(IMVSynchronizationPath, true);
+                        CurentPowerShellInstance.InvokeCommand("IMVSynchronization.Initialize", null);
+                    }
+
+                    if (logger.IsDebugEnabled)
+                        logger.Debug($"Done IMVSynchronization.Initialize {MAs.Current}");
                 }
-
-                CurentPowerShellInstance.LoadScriptList(CurentPowerShellInstance.Config["IMVSynchronization"],true);
-                CurentPowerShellInstance.InvokeCommand("IMVSynchronization.Initialize", null);
             }
+            this.IMVSynchronizationList = MAIMVSynchronizationList.ToArray();
 
-            if (IsDebugEnabled)
-                logger.Debug("Done IMVSynchronization.Initialize");
+            if (logger.IsDebugEnabled)
+                logger.Debug("Start IMVSynchronization.Initialize");
         }
 
         void IMVSynchronization.Terminate()
         {
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
                 logger.Debug("Start IMVSynchronization.Terminate");
 
             PowerShellInstance CurentPowerShellInstance;
@@ -611,7 +669,7 @@ namespace MIM
             {
                 if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
                 {
-                    logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                    logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                     throw (new Exception("PowerShell instance is null"));
                 }
 
@@ -619,7 +677,7 @@ namespace MIM
 
             }
 
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
                 logger.Debug("Done IMVSynchronization.Terminate");
         }
 
@@ -627,7 +685,7 @@ namespace MIM
         {
             DateTime StartTime = DateTime.Now;
 
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
                 logger.Debug("Start IMVSynchronization.Provision");
 
             PowerShellInstance CurentPowerShellInstance;
@@ -635,25 +693,25 @@ namespace MIM
             {
                 if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
                 {
-                    logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                    logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                     throw (new Exception("PowerShell instance is null"));
                 }
                 DateTime StartInvokeTime = DateTime.Now;
-                if (IsDebugEnabled)
-                    logger.Debug("Start IMVSynchronization.Provision on {0} ", curent_MA_NAME);
+                if (logger.IsDebugEnabled)
+                    logger.Debug($"Start IMVSynchronization.Provision on {curent_MA_NAME}");
                 CurentPowerShellInstance.InvokeCommand("IMVSynchronization.Provision", new Dictionary<string, object>() { { "MVEntry", mventry } });
-                if (IsDebugEnabled)
-                    logger.Debug("Start IMVSynchronization.Provision on {0} in {1}ms", curent_MA_NAME, (DateTime.Now - StartInvokeTime).TotalMilliseconds);
+                if (logger.IsTraceEnabled)
+                    logger.Trace($"Start IMVSynchronization.Provision on {curent_MA_NAME} in {(DateTime.Now - StartInvokeTime).TotalMilliseconds}ms");
 
             }
 
-            if (IsDebugEnabled)
-                logger.Debug("Done IMVSynchronization.Provision in {0}ms", (DateTime.Now - StartTime).TotalMilliseconds);
+            if (logger.IsTraceEnabled)
+                logger.Trace($"Done IMVSynchronization.Provision in {(DateTime.Now - StartTime).TotalMilliseconds}ms");
         }
 
         bool IMVSynchronization.ShouldDeleteFromMV(CSEntry csentry, MVEntry mventry)
         {
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
                 logger.Debug("Start IMVSynchronization.ShouldDeleteFromMV");
 
             bool result = false;
@@ -662,7 +720,7 @@ namespace MIM
             {
                 if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
                 {
-                    logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                    logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                     throw (new Exception("PowerShell instance is null"));
                 }
                 result = GetFirstObjectOf<bool>(CurentPowerShellInstance.InvokeCommand("IMVSynchronization.ShouldDeleteFromMV", new Dictionary<string, object>() { 
@@ -672,7 +730,7 @@ namespace MIM
 
             }
 
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
                 logger.Debug("Start IMVSynchronization.ShouldDeleteFromMV");
 
             return result;
@@ -720,26 +778,103 @@ namespace MIM
 
         System.Collections.Generic.IList<ConfigParameterDefinition> IMAExtensible2GetParameters.GetConfigParameters(System.Collections.ObjectModel.KeyedCollection<string, ConfigParameter> configParameters, ConfigParameterPage page)
         {
-            if (IsDebugEnabled)
-                logger.Debug("Start IMAExtensible2GetParameters.GetConfigParameters");
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Start IMAExtensible2GetParameters.GetConfigParameters {page.ToString("f")}"); 
 
-            System.Collections.Generic.List<ConfigParameterDefinition> list;
-            string IMAExtensible2Script = configParameters.Contains("IMAExtensible2GetParameters") ? configParameters["IMAExtensible2GetParameters"].Value : Config["IMAExtensible2GetParameters"];
+            System.Collections.Generic.List<ConfigParameterDefinition> list = null;
+            string IMAExtensible2Script = configParameters.Contains("IMAExtensible2GetParameters") ? configParameters["IMAExtensible2GetParameters"].Value : IMAExtensible2InitalScript;
 
-            if (IsDebugEnabled)
-                logger.Debug("Load: {0}", IMAExtensible2Script);
+            if (IMAExtensible2Script != null && File.Exists(IMAExtensible2Script))
+            {
+                if (logger.IsDebugEnabled)
+                    logger.Debug($"Load: {IMAExtensible2Script}");
 
-            PowerShellInstance CurrentPowerShellInstance = new MIM.PowerShellInstance($"{loggerFullName}.{MA_NAME}", MA_NAME);
-            CurrentPowerShellInstance.LoadScriptList(IMAExtensible2Script,true);
-            list = GetFirstObjectOf<System.Collections.Generic.List<ConfigParameterDefinition>>(CurrentPowerShellInstance.InvokeCommand("IMAExtensible2GetParameters.GetConfigParameters", new Dictionary<string, object>() { 
+                PowerShellInstance CurrentPowerShellInstance = new MIM.PowerShellInstance($"{loggerFullName}", loggerFullName);
+                CurrentPowerShellInstance.LoadScriptList(IMAExtensible2Script, true);
+                list = GetFirstObjectOf<System.Collections.Generic.List<ConfigParameterDefinition>>(CurrentPowerShellInstance.InvokeCommand("IMAExtensible2GetParameters.GetConfigParameters", new Dictionary<string, object>() {
                     { "ConfigParameters", configParameters } ,
                     { "ConfigParameterPage", page }
                     }));
 
-            CurrentPowerShellInstance.Dispose();
-            CurrentPowerShellInstance = null;
+                CurrentPowerShellInstance.Dispose();
+                CurrentPowerShellInstance = null;
+            }
+            else
+            {
+                #region IMAExtensible2GetParameters
+                try
+                {
+                    list = new List<ConfigParameterDefinition>();
+                    switch (page)
+                    {
+                        case ConfigParameterPage.Capabilities:
 
-            if (IsDebugEnabled)
+                            //DistinguishedNameStyle         : Generic
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateDropDownParameter("DistinguishedNameStyle", new string[] { "Generic", "Ldap", "None" }, false, "Generic"));
+                            //ObjectRename                   : True
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateCheckBoxParameter("ObjectRename", false));
+                            //NoReferenceValuesInFirstExport : False
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateCheckBoxParameter("NoReferenceValuesInFirstExport", false));
+                            //DeltaImport                    : True
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateCheckBoxParameter("DeltaImport", true));
+                            //ConcurrentOperation            : True
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateCheckBoxParameter("ConcurrentOperation", true));
+                            //DeleteAddAsReplace             : True
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateCheckBoxParameter("DeleteAddAsReplace", true));
+                            //ExportPasswordInFirstPass      : False
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateCheckBoxParameter("ExportPasswordInFirstPass", false));
+                            //FullExport                     : False
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateCheckBoxParameter("FullExport", false));
+                            //ObjectConfirmation             : Normal
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateDropDownParameter("ObjectConfirmation", new string[] { "Normal", "NoDeleteConfirmation", "NoAddAndDeleteConfirmation" }, false, "Normal"));
+                            //ExportType                     : ObjectReplace
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateDropDownParameter("ExportType", new string[] { "AttributeUpdate", "AttributeReplace", "ObjectReplace", "MultivaluedReferenceAttributeUpdate" }, false, "AttributeUpdate"));
+                            //Normalizations                 : None
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateDropDownParameter("Normalizations", new string[] { "None", "Uppercase", "RemoveAccents" }, false, "None"));
+                            //IsDNAsAnchor                   : False
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateCheckBoxParameter("IsDNAsAnchor", false));
+                            //SupportImport                  : True
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateCheckBoxParameter("SupportImport", true));
+                            //SupportExport                  : True
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateCheckBoxParameter("SupportExport", true));
+                            //SupportPartitions              : True
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateCheckBoxParameter("SupportPartitions", false));
+                            //SupportPassword                : True
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateCheckBoxParameter("SupportPassword", false));
+                            //SupportHierarchy               : True
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateCheckBoxParameter("SupportHierarchy", false));
+                            break;
+
+                        case ConfigParameterPage.Connectivity:
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateLabelParameter("Powershell script:"));
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateLabelParameter("(Optinal)"));
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateStringParameter("IMAExtensible2GetParameters", "", IMAExtensible2Script));
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateStringParameter("IMAExtensible2GetCapabilitiesEx", "", ""));
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateLabelParameter("(Mandatory)"));
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateStringParameter("IMAExtensible2GetSchema", "", IMAExtensible2Script));
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateStringParameter("IMAExtensible2CallImport", "", IMAExtensible2Script));
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateStringParameter("IMAExtensible2CallExport", "", IMAExtensible2Script));
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateLabelParameter("(Optinal)"));
+                            list.Add(Microsoft.MetadirectoryServices.ConfigParameterDefinition.CreateStringParameter("IMAExtensible2Password", "", IMAExtensible2Script));
+                            break;
+
+                        case ConfigParameterPage.Global: break;
+                        case ConfigParameterPage.Partition: break;
+                        case ConfigParameterPage.RunStep: break;
+                        case ConfigParameterPage.Schema: break;
+                    }
+                }
+                catch (Exception e)
+                {
+                    logger.Error(e.Message);
+                    logger.Error(e.Source);
+                    logger.Error(e.StackTrace);
+                    throw e;
+                }
+                #endregion
+            }
+
+            if (logger.IsDebugEnabled)
                 logger.Debug("Done IMAExtensible2GetParameters.GetConfigParameters");
 
             return list;
@@ -747,17 +882,17 @@ namespace MIM
 
         MACapabilities IMAExtensible2GetCapabilitiesEx.GetCapabilitiesEx(System.Collections.ObjectModel.KeyedCollection<string, ConfigParameter> configParameters)
         {
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
                 logger.Debug("Start IMAExtensible2GetCapabilitiesEx.GetCapabilitiesEx");
 
             MACapabilities result;
             string IMAExtensible2GetCapabilitiesEx = configParameters["IMAExtensible2GetCapabilitiesEx"].Value;
-            if (IMAExtensible2GetCapabilitiesEx.Length > 0)
+            if (File.Exists(IMAExtensible2GetCapabilitiesEx))
             {
-                if (IsDebugEnabled)
-                    logger.Debug("Load: {0}", IMAExtensible2GetCapabilitiesEx);
+                if (logger.IsDebugEnabled)
+                    logger.Debug($"Load: {IMAExtensible2GetCapabilitiesEx}");
 
-                PowerShellInstance CurrentPowerShellInstance = new MIM.PowerShellInstance($"{loggerFullName}.{MA_NAME}", MA_NAME);
+                PowerShellInstance CurrentPowerShellInstance = new MIM.PowerShellInstance($"{loggerFullName}", loggerFullName);
                 CurrentPowerShellInstance.LoadScriptList(IMAExtensible2GetCapabilitiesEx,true);
                 result = GetFirstObjectOf<MACapabilities>(CurrentPowerShellInstance.InvokeCommand("IMAExtensible2GetCapabilitiesEx.GetCapabilitiesEx", null));
 
@@ -789,14 +924,14 @@ namespace MIM
                 }
                 catch (Exception e)
                 {
-                    logger.Error("{0}", e.Message);
-                    logger.Error("{0}", e.Source);
-                    logger.Error("{0}", e.StackTrace);
+                    logger.Error(e.Message);
+                    logger.Error(e.Source);
+                    logger.Error(e.StackTrace);
                     throw new ExtensibleExtensionException(e.Message);
                 }
             }
 
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
                 logger.Debug("Done IMAExtensible2GetCapabilitiesEx.GetCapabilitiesEx");
 
             return result;
@@ -804,21 +939,21 @@ namespace MIM
 
         Schema IMAExtensible2GetSchema.GetSchema(System.Collections.ObjectModel.KeyedCollection<string, ConfigParameter> configParameters)
         {
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
                 logger.Debug("Start IMAExtensible2GetSchema.GetSchema");
 
             Schema result;
-            if (IsDebugEnabled)
-                logger.Debug("Load: {0}", configParameters["IMAExtensible2GetSchema"].Value);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Load: {configParameters["IMAExtensible2GetSchema"].Value}");
 
-            PowerShellInstance CurrentPowerShellInstance = new MIM.PowerShellInstance($"{loggerFullName}.{MA_NAME}", MA_NAME);
+            PowerShellInstance CurrentPowerShellInstance = new MIM.PowerShellInstance($"{loggerFullName}", loggerFullName);
             CurrentPowerShellInstance.LoadScriptList(configParameters["IMAExtensible2GetSchema"].Value,true);
             result = GetFirstObjectOf<Schema>(CurrentPowerShellInstance.InvokeCommand("IMAExtensible2GetSchema.GetSchema", new Dictionary<string, object>() { { "ConfigParameters", configParameters } }));
 
             CurrentPowerShellInstance.Dispose();
             CurrentPowerShellInstance = null;
 
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
             {
                 //log schema
                 foreach (SchemaType type in result.Types)
@@ -826,41 +961,85 @@ namespace MIM
                     logger.Debug("Schema type: {0}", type.Name);
                     foreach (SchemaAttribute attibute in type.Attributes)
                     {
-                        logger.Debug("Schema attibute: {0}", attibute.Name);
+                        logger.Debug($"Schema attibute{attibute.Name}: {(attibute.IsMultiValued ? "(IsMultiValued)" : "")}");
                     }
                     foreach (SchemaAttribute attibute in type.AnchorAttributes)
                     {
-                        logger.Debug("Schema AnchorAttributes: {0}", attibute.Name);
+                        logger.Debug($"Schema AnchorAttributes: { attibute.Name}");
                     }
                 }
-
-                logger.Debug("Done IMAExtensible2GetSchema.GetSchema");
             }
-
+            logger.Debug("Done IMAExtensible2GetSchema.GetSchema");
             return result;
         }
 
         ParameterValidationResult IMAExtensible2GetParameters.ValidateConfigParameters(System.Collections.ObjectModel.KeyedCollection<string, ConfigParameter> configParameters, ConfigParameterPage page)
         {
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
                 logger.Debug("Start IMAExtensible2GetParameters.ValidateConfigParameters");
 
-            ParameterValidationResult result;
+            ParameterValidationResult result = new ParameterValidationResult();
 
-            if (IsDebugEnabled)
-                logger.Debug("Load: {0}", configParameters["IMAExtensible2GetParameters"].Value);
+            try
+            {
+                //Optinal
+                foreach (string param in new string[] { "IMAExtensible2GetParameters", "IMAExtensible2GetCapabilitiesEx", "IMAExtensible2Password" })
+                {
+                    if (configParameters.Contains(param) && !string.IsNullOrEmpty(configParameters[param].Value))
+                    {
+                        if (!File.Exists(configParameters[param].Value))
+                        {
+                            result.Code = ParameterValidationResultCode.Failure;
+                            result.ErrorMessage = $"File{param} don´t exist {configParameters[param].Value}";
+                            result.ErrorParameter = param;
+                            return result;
+                        }
+                    }
+                }
+                //Mandatory
+                foreach (string param in new string[] { "IMAExtensible2GetSchema", "IMAExtensible2CallImport", "IMAExtensible2CallExport" })
+                {
+                    if (!configParameters.Contains(param) || string.IsNullOrEmpty(configParameters[param].Value))
+                    {
+                        result.Code = ParameterValidationResultCode.Failure;
+                        result.ErrorMessage = $"Missing configParameters: {param}";
+                        result.ErrorParameter = param;
+                        return result;
+                    }
+                    if (!File.Exists(configParameters[param].Value))
+                    {
+                        result.Code = ParameterValidationResultCode.Failure;
+                        result.ErrorMessage = $"File({param}) don´t exist {configParameters[param].Value}";
+                        result.ErrorParameter = param;
+                        return result;
+                    }
+                }
 
-            PowerShellInstance CurrentPowerShellInstance = new MIM.PowerShellInstance($"{loggerFullName}.{MA_NAME}", MA_NAME);
-            CurrentPowerShellInstance.LoadScriptList(configParameters["IMAExtensible2GetParameters"].Value,true);
-            result = GetFirstObjectOf<ParameterValidationResult>(CurrentPowerShellInstance.InvokeCommand("IMAExtensible2GetParameters.ValidateConfigParameters", new Dictionary<string, object>() { 
+                if (File.Exists(configParameters["IMAExtensible2GetParameters"].Value))
+                {
+                    if (logger.IsDebugEnabled)
+                        logger.Debug("Load: {0}", configParameters["IMAExtensible2GetParameters"].Value);
+
+                    PowerShellInstance CurrentPowerShellInstance = new MIM.PowerShellInstance($"{loggerFullName}", loggerFullName);
+                    CurrentPowerShellInstance.LoadScriptList(configParameters["IMAExtensible2GetParameters"].Value, true);
+                    result = GetFirstObjectOf<ParameterValidationResult>(CurrentPowerShellInstance.InvokeCommand("IMAExtensible2GetParameters.ValidateConfigParameters", new Dictionary<string, object>() {
             { "ConfigParameters", configParameters } ,
-            { "ConfigParameterPage", page } 
+            { "ConfigParameterPage", page }
             }));
 
-            CurrentPowerShellInstance.Dispose();
-            CurrentPowerShellInstance = null;
+                    CurrentPowerShellInstance.Dispose();
+                    CurrentPowerShellInstance = null;
+                }
+            }
+            catch (Exception e)
+            {
+                logger.Error(e.Message);
+                logger.Error(e.Source);
+                logger.Error(e.StackTrace);
+                throw e;
+            }
 
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
                 logger.Debug("Done IMAExtensible2GetParameters.ValidateConfigParameters");
 
             return result;
@@ -872,14 +1051,10 @@ namespace MIM
 
         OpenImportConnectionResults IMAExtensible2CallImport.OpenImportConnection(System.Collections.ObjectModel.KeyedCollection<string, ConfigParameter> configParameters, Schema types, OpenImportConnectionRunStep openImportRunStep)
         {
-
             OpenImportConnectionResults result = null;
-
             string curent_MA_NAME = MAUtils.MAFolder.Substring(MAUtils.MAFolder.LastIndexOf('\\') + 1);
 
-
-
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
             {
                 logger.Debug("Start IMAExtensible2CallImport.OpenImportConnection {0}", curent_MA_NAME);
                 logger.Debug("openImportRunStep: Type: {0} PageSize: {1} CustomData: {2}", openImportRunStep.ImportType, openImportRunStep.PageSize, openImportRunStep.CustomData);
@@ -890,11 +1065,11 @@ namespace MIM
                     logger.Debug("Schema type: {0}", type.Name);
                     foreach (SchemaAttribute attibute in type.Attributes)
                     {
-                        logger.Debug("Schema attibute: {0}", attibute.Name);
+                        logger.Debug($"Schema attibute{(attibute.IsMultiValued ? "(IsMultiValued)" : "")}: { attibute.Name}");
                     }
                     foreach (SchemaAttribute attibute in type.AnchorAttributes)
                     {
-                        logger.Debug("Schema AnchorAttributes: {0}", attibute.Name);
+                        logger.Debug($"Schema AnchorAttributes: {attibute.Name}");
                     }
                 }
             }
@@ -912,7 +1087,7 @@ namespace MIM
                 { "OpenImportConnectionRunStep", openImportRunStep } 
                 }));
 
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
                 logger.Debug("Done IMAExtensible2CallImport.OpenImportConnection");
 
             return result;
@@ -922,20 +1097,20 @@ namespace MIM
         {
             string curent_MA_NAME = MAUtils.MAFolder.Substring(MAUtils.MAFolder.LastIndexOf('\\') + 1);
 
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
                 logger.Debug("Start IMAExtensible2CallImport.GetImportEntries {0}", curent_MA_NAME);
 
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                 throw (new Exception("PowerShell instance is null"));
             }
             GetImportEntriesResults result = GetFirstObjectOf<GetImportEntriesResults>(CurentPowerShellInstance.InvokeCommand("IMAExtensible2CallImport.GetImportEntries", new Dictionary<string, object>() { 
             { "GetImportEntriesRunStep", importRunStep }
             }));
 
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
             {
                 logger.Debug("MoreToImport? {0}", result.MoreToImport);
                 logger.Debug("Done IMAExtensible2CallImport.GetImportEntries {0}", curent_MA_NAME);
@@ -948,13 +1123,13 @@ namespace MIM
         {
             string curent_MA_NAME = MAUtils.MAFolder.Substring(MAUtils.MAFolder.LastIndexOf('\\') + 1);
 
-            if (IsDebugEnabled)
-                logger.Debug("Start IMAExtensible2CallImport.CloseImportConnection {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Start IMAExtensible2CallImport.CloseImportConnection {curent_MA_NAME}");
 
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                 throw (new Exception("PowerShell instance is null"));
             }
             CloseImportConnectionResults result = GetFirstObjectOf<CloseImportConnectionResults>(CurentPowerShellInstance.InvokeCommand("IMAExtensible2CallImport.CloseImportConnection", new Dictionary<string, object>() { 
@@ -966,8 +1141,8 @@ namespace MIM
             PowerShellInstance.Clear();
             PowerShellInstance = null;*/
 
-            if (IsDebugEnabled)
-                logger.Debug("Done IMAExtensible2CallImport.CloseImportConnection {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Done IMAExtensible2CallImport.CloseImportConnection {curent_MA_NAME}");
 
             return result;
         }
@@ -979,22 +1154,22 @@ namespace MIM
         {
             string curent_MA_NAME = MAUtils.MAFolder.Substring(MAUtils.MAFolder.LastIndexOf('\\') + 1);
 
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
             {
-                logger.Debug("Start IMAExtensible2CallExport.OpenExportConnection {0}", curent_MA_NAME);
-                logger.Debug("OpenExportConnection: Type: {0} BatchSize: {1} StepPartition: {2}", exportRunStep.ExportType, exportRunStep.BatchSize, exportRunStep.StepPartition.Name);
+                logger.Debug($"Start IMAExtensible2CallExport.OpenExportConnection {curent_MA_NAME}");
+                logger.Debug($"OpenExportConnection: Type: {exportRunStep.ExportType} BatchSize: {exportRunStep.BatchSize} StepPartition: {exportRunStep.StepPartition.Name}");
 
                 //log schema
                 foreach (SchemaType type in types.Types)
                 {
-                    logger.Debug("Schema type: {0}", type.Name);
+                    logger.Debug($"Schema type: {type.Name}");
                     foreach (SchemaAttribute attibute in type.Attributes)
                     {
-                        logger.Debug("Schema attibute: {0}", attibute.Name);
+                        logger.Debug($"Schema attibute{(attibute.IsMultiValued ? "(IsMultiValued)" : "")}: {attibute.Name}");
                     }
                     foreach (SchemaAttribute attibute in type.AnchorAttributes)
                     {
-                        logger.Debug("Schema AnchorAttributes: {0}", attibute.Name);
+                        logger.Debug($"Schema AnchorAttributes: {attibute.Name}");
                     }
                 }
             }
@@ -1012,21 +1187,21 @@ namespace MIM
                 { "OpenExportConnectionRunStep", exportRunStep } 
                 });
 
-            if (IsDebugEnabled)
-                logger.Debug("Done IMAExtensible2CallExport.OpenExportConnection {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Done IMAExtensible2CallExport.OpenExportConnection {curent_MA_NAME}");
         }
 
         PutExportEntriesResults IMAExtensible2CallExport.PutExportEntries(System.Collections.Generic.IList<CSEntryChange> csentries)
         {
             string curent_MA_NAME = MAUtils.MAFolder.Substring(MAUtils.MAFolder.LastIndexOf('\\') + 1);
 
-            if (IsDebugEnabled)
-                logger.Debug("Start IMAExtensible2CallExport.PutExportEntries {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Start IMAExtensible2CallExport.PutExportEntries {curent_MA_NAME}");
 
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                 throw (new Exception("PowerShell instance is null"));
             }
             
@@ -1034,8 +1209,8 @@ namespace MIM
             { "CSEntryChanges", csentries }
             }));
 
-            if (IsDebugEnabled)
-                logger.Debug("Done IMAExtensible2CallExport.PutExportEntries {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Done IMAExtensible2CallExport.PutExportEntries {curent_MA_NAME}");
 
             return result;
         }
@@ -1044,13 +1219,13 @@ namespace MIM
         {
             string curent_MA_NAME = MAUtils.MAFolder.Substring(MAUtils.MAFolder.LastIndexOf('\\') + 1);
 
-            if (IsDebugEnabled)
-                logger.Debug("Start IMAExtensible2CallExport.CloseExportConnection {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Start IMAExtensible2CallExport.CloseExportConnection {curent_MA_NAME}");
 
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                 throw (new Exception("PowerShell instance is null"));
             }
             CurentPowerShellInstance.InvokeCommand("IMAExtensible2CallExport.CloseExportConnection", new Dictionary<string, object>() { 
@@ -1062,8 +1237,8 @@ namespace MIM
             PowerShellInstance.Clear();
             PowerShellInstance = null;*/
 
-            if (IsDebugEnabled)
-                logger.Debug("Done IMAExtensible2CallExport.CloseExportConnection {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Done IMAExtensible2CallExport.CloseExportConnection {curent_MA_NAME}");
         }
         #endregion
 
@@ -1072,8 +1247,8 @@ namespace MIM
         {
             string curent_MA_NAME = MAUtils.MAFolder.Substring(MAUtils.MAFolder.LastIndexOf('\\') + 1);
 
-            if (IsDebugEnabled)
-                logger.Debug("Start IMAExtensible2Password.OpenPasswordConnection {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Start IMAExtensible2Password.OpenPasswordConnection {curent_MA_NAME}");
 
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
@@ -1087,26 +1262,26 @@ namespace MIM
                 { "Partition", partition } 
                 });
 
-            if (IsDebugEnabled)
-                logger.Debug("Done IMAExtensible2Password.OpenPasswordConnection {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Done IMAExtensible2Password.OpenPasswordConnection {curent_MA_NAME}");
         }
 
         ConnectionSecurityLevel IMAExtensible2Password.GetConnectionSecurityLevel()
         {
             string curent_MA_NAME = MAUtils.MAFolder.Substring(MAUtils.MAFolder.LastIndexOf('\\') + 1);
 
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
                 logger.Debug("Start IMAExtensible2Password.GetConnectionSecurityLevel {0}", curent_MA_NAME);
 
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                 throw (new Exception("PowerShell instance is null"));
             }
             ConnectionSecurityLevel result = GetFirstObjectOf<ConnectionSecurityLevel>(CurentPowerShellInstance.InvokeCommand("IMAExtensible2Password.GetConnectionSecurityLevel", null));
 
-            if (IsDebugEnabled)
+            if (logger.IsDebugEnabled)
                 logger.Debug("Done IMAExtensible2Password.GetConnectionSecurityLevel {0}", curent_MA_NAME);
 
             return result;
@@ -1116,13 +1291,13 @@ namespace MIM
         {
             string curent_MA_NAME = MAUtils.MAFolder.Substring(MAUtils.MAFolder.LastIndexOf('\\') + 1);
 
-            if (IsDebugEnabled)
-                logger.Debug("Start IMAExtensible2Password.ClosePasswordConnection {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Start IMAExtensible2Password.ClosePasswordConnection {curent_MA_NAME}");
 
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                 throw (new Exception("PowerShell instance is null"));
             }
             CurentPowerShellInstance.InvokeCommand("IMAExtensible2Password.ClosePasswordConnection", null);
@@ -1132,21 +1307,21 @@ namespace MIM
             PowerShellInstance.Clear();
             PowerShellInstance = null;*/
 
-            if (IsDebugEnabled)
-                logger.Debug("Done IMAExtensible2Password.ClosePasswordConnection {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Done IMAExtensible2Password.ClosePasswordConnection {curent_MA_NAME}");
         }
 
         void IMAExtensible2Password.ChangePassword(CSEntry csentry, System.Security.SecureString oldPassword, System.Security.SecureString newPassword)
         {
             string curent_MA_NAME = MAUtils.MAFolder.Substring(MAUtils.MAFolder.LastIndexOf('\\') + 1);
 
-            if (IsDebugEnabled)
-                logger.Debug("Start IMAExtensible2Password.ChangePassword {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Start IMAExtensible2Password.ChangePassword {curent_MA_NAME}");
 
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                 throw (new Exception("PowerShell instance is null"));
             }
             CurentPowerShellInstance.InvokeCommand("IMAExtensible2Password.ChangePassword", new Dictionary<string, object>() { 
@@ -1155,21 +1330,21 @@ namespace MIM
             { "newPassword", newPassword },
             });
 
-            if (IsDebugEnabled)
-                logger.Debug("Done IMAExtensible2Password.ChangePassword {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Done IMAExtensible2Password.ChangePassword {curent_MA_NAME}");
         }
 
         void IMAExtensible2Password.SetPassword(CSEntry csentry, System.Security.SecureString newPassword, PasswordOptions options)
         {
             string curent_MA_NAME = MAUtils.MAFolder.Substring(MAUtils.MAFolder.LastIndexOf('\\') + 1);
 
-            if (IsDebugEnabled)
-                logger.Debug("Start IMAExtensible2Password.SetPassword {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Start IMAExtensible2Password.SetPassword {curent_MA_NAME}");
 
             PowerShellInstance CurentPowerShellInstance;
             if (!PowerShellInstance.TryGetValue(curent_MA_NAME, out CurentPowerShellInstance))
             {
-                logger.Error("ERROR geting powershell in for {0}", curent_MA_NAME);
+                logger.Error($"Geting powershell instance for {curent_MA_NAME}");
                 throw (new Exception("PowerShell instance is null"));
             }
             CurentPowerShellInstance.InvokeCommand("IMAExtensible2Password.SetPassword", new Dictionary<string, object>() { 
@@ -1178,8 +1353,8 @@ namespace MIM
             { "PasswordOptions", options },
             });
 
-            if (IsDebugEnabled)
-                logger.Debug("Done IMAExtensible2Password.SetPassword {0}", curent_MA_NAME);
+            if (logger.IsDebugEnabled)
+                logger.Debug($"Done IMAExtensible2Password.SetPassword {curent_MA_NAME}");
         }
         #endregion
     }
