@@ -43,6 +43,8 @@ namespace MIM
         {
             this.MA_NAME = null;
             //this.Config = null;
+            this.logger.Factory.Flush();
+            this.logger.Factory.Dispose();
             this.logger = null;
             this.PowerShell.Dispose();
             this.ScriptList.Clear();
@@ -348,6 +350,12 @@ namespace MIM
             }
         }
 
+        public void Dispose()
+        {
+            this.logger.Factory.Flush();
+            this.logger.Factory.Dispose();
+            this.logger = null;
+        }
         /// <summary>
         /// Get first object in Collection that match type
         /// Object is cast as selected
@@ -417,6 +425,8 @@ namespace MIM
                 throw (new Exception("PowerShell instance is null"));
             }
             CurentPowerShellInstance.InvokeCommand("IMASynchronization.Terminate", null);
+
+            logger.Factory.Flush();
 
             if (logger.IsDebugEnabled)
                 logger.Debug($"Done IMASynchronization.Terminate {curent_MA_NAME}");
